@@ -1,0 +1,95 @@
+basePath: /
+definitions:
+  models.Order:
+    properties:
+      date_commande:
+        type: string
+      id_client:
+        type: string
+      id_commande:
+        type: string
+    type: object
+  models.Product:
+    properties:
+      id:
+        type: string
+      p_desc:
+        type: string
+      qte:
+        type: number
+    type: object
+host: localhost:8081
+info:
+  contact: {}
+  description: API for querying Products and Orders
+  title: Query Service API
+  version: "1.0"
+paths:
+  /orders:
+    get:
+      description: Retrieve all orders from MongoDB
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Order'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get all orders
+      tags:
+      - Orders
+  /orders/{id}:
+    get:
+      description: Retrieve a specific order by its ID from MongoDB
+      parameters:
+      - description: Order ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Order'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get order by ID
+      tags:
+      - Orders
+  /products:
+    get:
+      description: Retrieve all products from MongoDB
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Product'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get all products
+      tags:
+      - Products
+swagger: "2.0"

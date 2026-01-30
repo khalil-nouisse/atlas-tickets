@@ -1,0 +1,89 @@
+version: "3.8"
+
+services:
+  # 1. RabbitMQ (The Broker)
+  atlas-rabbitmq:
+    image: rabbitmq:3-management
+    container_name: atlas-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ecommerce-net
+
+  # 2. MongoDB (The Database)
+  atlas-mongo:
+    image: mongo:latest
+    container_name: atlas-mongo
+    ports:
+      - "27017:27017"
+    networks:
+      - ecommerce-net
+
+  # 3. PostgreSQL (The Command Database)
+  atlas-postgres:
+    image: postgres:15
+    container_name: atlas-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: valury
+      POSTGRES_PASSWORD: your_password
+      POSTGRES_DB: postgres
+    volumes:
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - ecommerce-net
+
+  # 4. Command Service (Node.js App)
+  atlas-command-api:
+    build: ./command-service
+    container_name: atlas-command-api
+    ports:
+      - "5000:5000"
+    environment:
+      - DB_USER=valury
+      - DB_PASSWORD=your_password
+      - DB_HOST=atlas-postgres
+      - DB_PORT=5432
+      - DB_NAME=postgres
+      - RABBITMQ_URL=amqp://guest:guest@atlas-rabbitmq:5672/
+    depends_on:
+      atlas-rabbitmq:
+        condition: service_healthy
+      atlas-postgres:
+        condition: service_started
+    networks:
+      - ecommerce-net
+
+  # 5. Query Service (Your Go App)
+  atlas-go-worker:
+    build: ./query-service # Build from the Dockerfile in current directory
+    container_name: atlas-go-worker
+    ports:
+      - "8081:8081" # Map host port 8081 to container port 8081
+    environment:
+      - MONGO_URI=mongodb://atlas-mongo:27017
+      - RABBITMQ_URL=amqp://guest:guest@atlas-rabbitmq:5672/
+      - DB_NAME=ecommerce_read_db
+      - COLLECTION_NAME=products
+    depends_on:
+      atlas-rabbitmq:
+        condition: service_healthy
+      atlas-mongo:
+        condition: service_started
+    networks:
+      - ecommerce-net
+
+# Define a shared network so they can talk to each other
+networks:
+  ecommerce-net:
+    driver: bridge
