@@ -1,7 +1,8 @@
 package main
 
 import (
-	mongo "query-service/database/mongo"
+	mongodb "query-service/database/mongo"
+	postgresdb "query-service/database/postgres"
 	redisdb "query-service/database/redis"
 	_ "query-service/docs"
 	"query-service/events"
@@ -19,16 +20,20 @@ import (
 // @BasePath /
 func main() {
 	//connect to mongoDB
-	mongo.ConnectDB()
+	mongodb.ConnectDB()
 
 	//connect to redis
-	redisdb.GetClient()
+	redisdb.GetRedisClient()
+
+	//connect to postgres
+	postgresdb.GetPostgresClient()
 
 	// Start RabbitMQ Consumer (Writes)
 	go events.StartConsumer()
 
 	// Start HTTP Server (Reads)
 	r := gin.Default()
+	r.GET("/tickets", handlers.GetAllProducts)
 	r.GET("/products", handlers.GetAllProducts)
 	r.GET("/orders", handlers.GetAllOrders)
 	r.GET("/orders/:id", handlers.GetOrder)

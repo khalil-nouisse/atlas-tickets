@@ -18,7 +18,7 @@ const connectRabbitMQ = async () => {
             // Create a channel
             channel = await connection.createChannel();
 
-            console.log("✅ RabbitMQ Connected and Channel Created");
+            console.log(" RabbitMQ Connected and Channel Created");
 
             // Handle connection close/error events
             connection.on('error', (err) => {

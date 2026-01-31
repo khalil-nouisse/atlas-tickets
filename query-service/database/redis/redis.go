@@ -15,7 +15,7 @@ import (
 var Client *redis.Client
 var once sync.Once
 
-func GetClient() *redis.Client {
+func GetRedisClient() *redis.Client {
 	if Client == nil {
 		return connectRedis()
 	}

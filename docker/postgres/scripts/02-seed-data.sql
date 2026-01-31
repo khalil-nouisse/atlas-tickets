@@ -1,32 +1,18 @@
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
-CREATE TABLE client(
-    id_client UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    firstname VARCHAR(15) NOT NULL,
-    lastname VARCHAR(15) NOT NULL,
-    address VARCHAR(100)
-);
-
-CREATE TABLE product(
-    id_product UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    p_description VARCHAR(100),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    stock_quantity INT NOT NULL DEFAULT 0
-);
 
 
-CREATE TABLE commande(
-    id_commande UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    id_client UUID NOT NULL REFERENCES client(id_client) ON DELETE CASCADE,
-    date_commande TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- 2. SEED DATA (Initial Mock Data)
+-- Insert a test User (You)
+INSERT INTO users (email, full_name) 
+VALUES ('demo@atlastickets.ma', 'DevOps Engineer');
 
-);
+-- Insert the Big Match: Morocco vs South Africa
+INSERT INTO matches (home_team, away_team, match_date, stadium) 
+VALUES ('Morocco', 'South Africa', '2026-01-30 20:00:00', 'Stade Adrar - Agadir');
 
-
-CREATE TABLE commande_prod(
-    id_commande_prod UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    id_commande UUID NOT NULL REFERENCES commande(id_commande) ON DELETE CASCADE,
-    id_produit UUID NOT NULL REFERENCES product(id_product) ON DELETE CASCADE,
-    prix_unitaire DECIMAL(10,2) NOT NULL , 
-    quantity INT NOT NULL
-);
+-- Insert Inventory for that Match (Match ID 1)
+-- VIP: 50 seats available
+-- CAT1: 100 seats available (Low number to test "Sold Out" logic easily)
+INSERT INTO ticket_inventory (match_id, category, price, total_seats, sold_seats) 
+VALUES 
+(1, 'VIP', 2000.00, 50, 0),
+(1, 'CAT1', 500.00, 100, 0);

@@ -15,6 +15,13 @@ import (
 var ProductCollection *mongo.Collection
 var OrderCollection *mongo.Collection
 
+func GetMongoCollection() *mongo.Collection {
+	if ProductCollection == nil {
+		ConnectDB()
+	}
+	return ProductCollection
+}
+
 // ConnectDB initializes the database connection
 func ConnectDB() {
 	// 1. Load .env file
@@ -46,11 +53,11 @@ func ConnectDB() {
 		log.Fatal("Failed to ping MongoDB:", err)
 	}
 
-	fmt.Println("✅ Connected to MongoDB Successfully!")
+	fmt.Println(" Connected to MongoDB Successfully!")
 
 	// 6. Assign the collection
 	dbName := os.Getenv("DB_NAME")
 	colName := os.Getenv("COLLECTION_NAME")
 	ProductCollection = client.Database(dbName).Collection(colName)
-	OrderCollection = client.Database(dbName).Collection("orders")
+	OrderCollection = client.Database(dbName).Collection("atlas-tickets")
 }

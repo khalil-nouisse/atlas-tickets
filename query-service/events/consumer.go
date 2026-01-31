@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"os/signal"
 	database "query-service/database/mongo"
 	"query-service/models"
-
+	"syscall"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -29,6 +30,7 @@ type ProductEventPayload struct {
 func StartConsumer() {
 
 	url := os.Getenv("RABBITMQ_URL")
+	queueName := os.Getenv("RABBITMQ_TICKET_QUEUE")
 	if url == "" {
 		url = "amqp://guest:guest@localhost:5672/"
 	}
@@ -54,18 +56,32 @@ func StartConsumer() {
 	if err != nil {
 		log.Fatalf("Could not connect to RabbitMQ after %d attempts: %v", maxRetries, err)
 	}
-	defer conn.Close()
 
 	//open channel
-	ch, _ := conn.Channel()
-	defer ch.Close()
+	ch, err := conn.Channel()
+	if err != nil {
+		log.Fatalf("Failed to open a channel: %v", err)
+	}
 
-	// Queue name must match producer: 'product_events'
-	q, _ := ch.QueueDeclare("product_events", true, false, false, false, nil)
+	//define the queue
+	q, err := ch.QueueDeclare(queueName, true, false, false, false, nil)
+	if err != nil {
+		log.Fatalf("Failed to declare queue: %v", err)
+	}
 
-	msgs, _ := ch.Consume(q.Name, "", true, false, false, false, nil)
+	//start consuming.                   | false for disabling auto ack to garentee presistance  , Only after success, manually run: d.Ack(false) to delete the data. from the mthe message broker
+	msgs, err := ch.Consume(q.Name, "", true, false, false, false, nil)
+	if err != nil {
+		log.Fatalf("Failed to register consumer: %v", err)
+	}
 
-	forever := make(chan bool)
+	// This channel will receive a value when you press CTRL+C or K8s stops the pod
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	// 4. Create a "Done" channel to coordinate shutdown
+	// We use this to tell the main thread: "Okay, the consumer loop has actually finished."
+	doneChan := make(chan bool)
 
 	go func() {
 		for d := range msgs {
@@ -76,46 +92,40 @@ func StartConsumer() {
 			}
 
 			switch wrapper.EventType {
-			case "PRODUCT_CREATED":
-				var payload ProductEventPayload
+			case "TICKET_REQUESTED":
+				var payload models.TicketRequest
 				if err := json.Unmarshal(wrapper.Payload, &payload); err != nil {
-					log.Printf("Error parsing product payload: %v", err)
+					log.Printf("Error parsing ticket request payload: %v", err)
 					continue
 				}
-				handleProductInsert(payload)
-
-			case "ORDER_CREATED":
-				var payload models.Order
-				if err := json.Unmarshal(wrapper.Payload, &payload); err != nil {
-					log.Printf("Error parsing order creation payload: %v", err)
-					continue
-				}
-				handleOrderInsert(payload)
-
-			case "ORDER_UPDATED":
-				var payload models.Order
-				if err := json.Unmarshal(wrapper.Payload, &payload); err != nil {
-					log.Printf("Error parsing order update payload: %v", err)
-					continue
-				}
-				handleOrderUpdate(payload)
-
-			case "ORDER_DELETED":
-				var payload models.Order
-				if err := json.Unmarshal(wrapper.Payload, &payload); err != nil {
-					log.Printf("Error parsing order delete payload: %v", err)
-					continue
-				}
-				handleOrderDelete(payload)
+				log.Printf("Processing Ticket Request: %s", payload.RequestID)
+				service.ProcessTicketRequest(payload)
 
 			default:
 				log.Printf("Unknown Event Type: %s", wrapper.EventType)
 			}
 		}
+		// If we get here, it means the 'msgs' channel was closed (connection died or app is stopping)
+		log.Println("Consumer loop finished")
+		doneChan <- true
 	}()
 
 	log.Printf("🎧 Waiting for events. Press CTRL+C to exit")
-	<-forever
+
+	// 5. BLOCK HERE until a signal is received
+	<-sigChan
+
+	conn.Close() //closing connection -> close channel
+
+	log.Println("Shutting signal received...")
+
+	// 6. Close the channel to stop the goroutine
+	close(doneChan)
+
+	// 7. Wait for the goroutine to finish
+	<-doneChan
+
+	log.Println("Consumer exited cleanly")
 }
 
 // PRODUCT HANDLERS
@@ -151,7 +161,7 @@ func handleOrderUpdate(order models.Order) {
 
 	_, err := database.OrderCollection.UpdateOne(nil, filter, update, opts)
 	if err != nil {
-		log.Printf("❌ Order Update Failed: %v", err)
+		log.Printf(" Order Update Failed: %v", err)
 	} else {
 		log.Printf("🔄 Updated Order: %s", order.ID)
 	}
@@ -161,7 +171,7 @@ func handleOrderDelete(order models.Order) {
 	filter := bson.M{"_id": order.ID}
 	_, err := database.OrderCollection.DeleteOne(nil, filter)
 	if err != nil {
-		log.Printf("❌ Order Delete Failed: %v", err)
+		log.Printf(" Order Delete Failed: %v", err)
 	} else {
 		log.Printf("🗑️ Deleted Order: %s", order.ID)
 	}
