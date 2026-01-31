@@ -15,7 +15,8 @@ import (
 
 // EventWrapper is the outer shell of every message
 type EventWrapper struct {
-	EventType string          `json:"event_type"`
+	Event     string          `json:"event"`
+	RequestID string          `json:"request_id"`
 	Payload   json.RawMessage `json:"payload"`
 }
 
@@ -86,25 +87,33 @@ func StartConsumer(bookingService *service.BookingService) {
 			var wrapper EventWrapper
 			if err := json.Unmarshal(d.Body, &wrapper); err != nil {
 				log.Printf("Error parsing wrapper: %v", err)
+				d.Ack(false)
 				continue
 			}
 
-			switch wrapper.EventType {
+			switch wrapper.Event {
 			case "TICKET_REQUESTED":
 				var payload models.TicketRequest
 				if err := json.Unmarshal(wrapper.Payload, &payload); err != nil {
 					log.Printf("Error parsing ticket request payload: %v", err)
-					continue
-				}
-				log.Printf("Processing Ticket Request: %s", payload.RequestID)
-				err = bookingService.ProcessTicketRequest(payload)
-				if err != nil {
-					log.Printf("Error processing ticket request: %v", err)
+					d.Ack(false)
 					continue
 				}
 
+				log.Printf("Processing Ticket Request: %s", payload.RequestID)
+
+				err = bookingService.ProcessTicketRequest(payload)
+				if err != nil {
+					log.Printf("Error processing ticket request: %v", err)
+					d.Ack(false)
+					continue
+				}
+
+				//tell rabbitMQ : DONE , dont resend the data "delete it"
+				d.Ack(false)
+
 			default:
-				log.Printf("Unknown Event Type: %s", wrapper.EventType)
+				log.Printf("Unknown Event Type: %s", wrapper.Event)
 			}
 		}
 		// If we get here, it means the 'msgs' channel was closed (connection died or app is stopping)

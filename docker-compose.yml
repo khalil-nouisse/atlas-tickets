@@ -1,89 +1,109 @@
 version: "3.8"
 
 services:
-  # 1. RabbitMQ (The Broker)
+  # 1. RabbitMQ (The Message Broker)
   atlas-rabbitmq:
     image: rabbitmq:3-management
     container_name: atlas-rabbitmq
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "${RABBITMQ_PORT}:${RABBITMQ_PORT}"
+      - "${RABBITMQ_UI_PORT}:${RABBITMQ_UI_PORT}"
     environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS}
     healthcheck:
       test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - ecommerce-net
+      - atlas-network
 
-  # 2. MongoDB (The Database)
-  atlas-mongo:
-    image: mongo:latest
-    container_name: atlas-mongo
-    ports:
-      - "27017:27017"
-    networks:
-      - ecommerce-net
-
-  # 3. PostgreSQL (The Command Database)
+  # 2. PostgreSQL (The Relational DB - Command Service & Booking)
   atlas-postgres:
     image: postgres:15
     container_name: atlas-postgres
+    restart: always
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT}:${POSTGRES_PORT}"
     environment:
-      POSTGRES_USER: valury
-      POSTGRES_PASSWORD: your_password
-      POSTGRES_DB: postgres
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
-      - ecommerce-net
+      - atlas-network
 
-  # 4. Command Service (Node.js App)
-  atlas-command-api:
+  # 3. MongoDB (The NoSQL DB - Read Models)
+  atlas-mongo:
+    image: mongo:latest
+    container_name: atlas-mongo
+    restart: always
+    ports:
+      - "${MONGO_PORT}:${MONGO_PORT}"
+    networks:
+      - atlas-network
+
+  # 4. Redis (The Cache)
+  atlas-redis:
+    image: redis:alpine
+    container_name: atlas-redis
+    restart: always
+    ports:
+      - "${REDIS_PORT}:${REDIS_PORT}"
+    networks:
+      - atlas-network
+
+  # 5. Command Service (Node.js - Writes)
+  command-service:
     build: ./command-service
-    container_name: atlas-command-api
+    container_name: atlas-command-service
     ports:
       - "5000:5000"
     environment:
-      - DB_USER=valury
-      - DB_PASSWORD=your_password
-      - DB_HOST=atlas-postgres
-      - DB_PORT=5432
-      - DB_NAME=postgres
-      - RABBITMQ_URL=amqp://guest:guest@atlas-rabbitmq:5672/
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_HOST=${POSTGRES_HOST}
+      - DB_PORT=${POSTGRES_PORT}
+      - DB_NAME=${POSTGRES_DB}
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@${RABBITMQ_HOST}:${RABBITMQ_PORT}/
     depends_on:
       atlas-rabbitmq:
         condition: service_healthy
       atlas-postgres:
         condition: service_started
     networks:
-      - ecommerce-net
+      - atlas-network
 
-  # 5. Query Service (Your Go App)
-  atlas-go-worker:
-    build: ./query-service # Build from the Dockerfile in current directory
-    container_name: atlas-go-worker
+  # 6. Query Service (Go - Reads & Booking Processing)
+  query-service:
+    build: ./query-service
+    container_name: atlas-query-service
+    restart: always
     ports:
-      - "8081:8081" # Map host port 8081 to container port 8081
+      - "8081:8081"
     environment:
-      - MONGO_URI=mongodb://atlas-mongo:27017
-      - RABBITMQ_URL=amqp://guest:guest@atlas-rabbitmq:5672/
-      - DB_NAME=ecommerce_read_db
-      - COLLECTION_NAME=products
+      - GIN_MODE=${GIN_MODE}
+      # RabbitMQ
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@${RABBITMQ_HOST}:${RABBITMQ_PORT}/
+      - RABBITMQ_TICKET_QUEUE=${TICKET_QUEUE}
+      # Databases
+      - POSTGRES_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      - MONGO_URI=mongodb://${MONGO_HOST}:${MONGO_PORT}
+      - REDIS_ADDRESS=${REDIS_HOST}:${REDIS_PORT}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      # App Config
+      - DB_NAME=${MONGO_DB_NAME}
+      - COLLECTION_NAME=${MONGO_COLLECTION}
     depends_on:
-      atlas-rabbitmq:
-        condition: service_healthy
-      atlas-mongo:
-        condition: service_started
+      - atlas-rabbitmq
+      - atlas-postgres
+      - atlas-mongo
+      - atlas-redis
     networks:
-      - ecommerce-net
+      - atlas-network
 
-# Define a shared network so they can talk to each other
 networks:
-  ecommerce-net:
+  atlas-network:
     driver: bridge

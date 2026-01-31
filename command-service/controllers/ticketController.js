@@ -52,7 +52,7 @@ const buyTicket = async (req, res) => {
         const payload = {
             event: "TICKET_REQUESTED",
             request_id: uuidv4(),
-            data: {
+            payload: {
                 match_id,
                 category,
                 quantity,

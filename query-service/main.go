@@ -10,6 +10,7 @@ import (
 	"query-service/services"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
@@ -20,6 +21,10 @@ import (
 // @host localhost:8081
 // @BasePath /
 func main() {
+	// Load environment variables
+	if err := godotenv.Load(); err != nil {
+		log.Println("No .env file found, relying on system environment variables")
+	}
 
 	//CREATE DEPENDENCIES
 	pgPool := postgres.GetPostgresClient()

@@ -30,10 +30,7 @@ func connectRedis() *redis.Client {
 	once.Do(func() {
 
 		//load .env file
-		err := godotenv.Load("../.env")
-		if err != nil {
-			log.Fatal("Error loading .env file")
-		}
+		_ = godotenv.Load()
 
 		// Get environment variable
 		reddisAddr := os.Getenv("REDIS_ADDRESS")

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/joho/godotenv"
 )
 
 var Pool *pgxpool.Pool
@@ -24,20 +23,12 @@ func connectPostgres() (*pgxpool.Pool, error) {
 	// Example: postgres://user:pass@localhost:5432/dbname
 
 	//load .env file
-	err := godotenv.Load("../.env")
-	if err != nil {
-		log.Fatal("Error loading .env file")
+	pgUrl := os.Getenv("POSTGRES_URL")
+	if pgUrl == "" {
+		return nil, fmt.Errorf("POSTGRES_URL environment variable is not set")
 	}
 
-	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s",
-		os.Getenv("DB_USER"),
-		os.Getenv("DB_PASSWORD"),
-		os.Getenv("DB_HOST"),
-		os.Getenv("DB_PORT"),
-		os.Getenv("DB_NAME"),
-	)
-
-	config, err := pgxpool.ParseConfig(dsn)
+	config, err := pgxpool.ParseConfig(pgUrl)
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse database config: %v", err)
 	}

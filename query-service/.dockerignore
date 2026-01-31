@@ -1,4 +1,5 @@
-main
-.env
 .git
-.gitignore
+.env
+bin/
+tmp/
+tests/
