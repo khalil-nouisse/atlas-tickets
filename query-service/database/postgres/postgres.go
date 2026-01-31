@@ -5,17 +5,23 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 var Pool *pgxpool.Pool
+var once sync.Once
 
 func GetPostgresClient() *pgxpool.Pool {
-	if Pool == nil {
-		connectPostgres()
-	}
+	once.Do(func() {
+		var err error
+		Pool, err = connectPostgres()
+		if err != nil {
+			log.Fatalf("Failed to connect to Postgres: %v", err)
+		}
+	})
 	return Pool
 }
 

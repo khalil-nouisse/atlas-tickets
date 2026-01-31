@@ -17,7 +17,7 @@ import (
 type EventWrapper struct {
 	Event     string          `json:"event"`
 	RequestID string          `json:"request_id"`
-	Payload   json.RawMessage `json:"payload"`
+	Data      json.RawMessage `json:"data"`
 }
 
 // ProductEventPayload matches the payload sent by producer
@@ -94,11 +94,14 @@ func StartConsumer(bookingService *service.BookingService) {
 			switch wrapper.Event {
 			case "TICKET_REQUESTED":
 				var payload models.TicketRequest
-				if err := json.Unmarshal(wrapper.Payload, &payload); err != nil {
+				if err := json.Unmarshal(wrapper.Data, &payload); err != nil {
 					log.Printf("Error parsing ticket request payload: %v", err)
 					d.Ack(false)
 					continue
 				}
+
+				// Manually inject the RequestID from the wrapper
+				payload.RequestID = wrapper.RequestID
 
 				log.Printf("Processing Ticket Request: %s", payload.RequestID)
 

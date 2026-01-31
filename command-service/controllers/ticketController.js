@@ -37,6 +37,9 @@ const { v4: uuidv4 } = require('uuid');
  */
 const buyTicket = async (req, res) => {
     try {
+        if (!req.body) {
+            return res.status(400).json({ error: "Invalid request: Body is missing" });
+        }
         const { match_id, category, quantity, user_id } = req.body;
 
         // Basic validation
@@ -52,11 +55,11 @@ const buyTicket = async (req, res) => {
         const payload = {
             event: "TICKET_REQUESTED",
             request_id: uuidv4(),
-            payload: {
-                match_id,
+            data: {
+                match_id: parseInt(match_id),
                 category,
-                quantity,
-                user_id,
+                quantity: parseInt(quantity),
+                user_id: parseInt(user_id),
                 timestamp: new Date().toISOString()
             }
         };

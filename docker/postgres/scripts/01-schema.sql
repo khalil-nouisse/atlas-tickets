@@ -19,7 +19,7 @@ CREATE TABLE matches (
 -- C. Inventory Table (Category Based + Optimistic Locking)
 CREATE TABLE ticket_inventory (
     inventory_id SERIAL PRIMARY KEY,
-    match_id INT REFERENCES matches(id),
+    match_id INT REFERENCES matches(match_id),
     category VARCHAR(20) NOT NULL, -- e.g., 'VIP', 'CAT1'
     price DECIMAL(10, 2) NOT NULL,
     total_seats INT NOT NULL,
@@ -32,9 +32,9 @@ CREATE TABLE ticket_inventory (
 
 -- D. Bookings Table (The Transaction Log)
 CREATE TABLE bookings (
-    bid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id INT REFERENCES users(id),
-    match_id INT REFERENCES matches(id),
+    booking_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id INT REFERENCES users(user_id),
+    match_id INT REFERENCES matches(match_id),
     category VARCHAR(20) NOT NULL,
     quantity INT NOT NULL,
     status VARCHAR(20) DEFAULT 'PENDING', -- 'PENDING', 'CONFIRMED', 'FAILED', 'SOLD_OUT'

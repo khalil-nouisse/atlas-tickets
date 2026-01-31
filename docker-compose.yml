@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   # 1. RabbitMQ (The Message Broker)
   atlas-rabbitmq:
@@ -58,6 +56,8 @@ services:
   # 5. Command Service (Node.js - Writes)
   command-service:
     build: ./command-service
+    volumes:
+      - ./docker/postgres/scripts:/docker/postgres/scripts
     container_name: atlas-command-service
     ports:
       - "5000:5000"
