@@ -5,14 +5,12 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	database "query-service/database/mongo"
 	"query-service/models"
+	service "query-service/services"
 	"syscall"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // EventWrapper is the outer shell of every message
@@ -27,7 +25,7 @@ type ProductEventPayload struct {
 	Quantity    float64 `json:"qte"`
 }
 
-func StartConsumer() {
+func StartConsumer(bookingService *service.BookingService) {
 
 	url := os.Getenv("RABBITMQ_URL")
 	queueName := os.Getenv("RABBITMQ_TICKET_QUEUE")
@@ -69,8 +67,8 @@ func StartConsumer() {
 		log.Fatalf("Failed to declare queue: %v", err)
 	}
 
-	//start consuming.                   | false for disabling auto ack to garentee presistance  , Only after success, manually run: d.Ack(false) to delete the data. from the mthe message broker
-	msgs, err := ch.Consume(q.Name, "", true, false, false, false, nil)
+	//start consuming.                   | false for disabling auto ack that garentee presistance  , Only after success, manually run: d.Ack(false) to delete the data. from the mthe message broker
+	msgs, err := ch.Consume(q.Name, "", false, false, false, false, nil)
 	if err != nil {
 		log.Fatalf("Failed to register consumer: %v", err)
 	}
@@ -99,7 +97,11 @@ func StartConsumer() {
 					continue
 				}
 				log.Printf("Processing Ticket Request: %s", payload.RequestID)
-				service.ProcessTicketRequest(payload)
+				err = bookingService.ProcessTicketRequest(payload)
+				if err != nil {
+					log.Printf("Error processing ticket request: %v", err)
+					continue
+				}
 
 			default:
 				log.Printf("Unknown Event Type: %s", wrapper.EventType)
@@ -110,7 +112,7 @@ func StartConsumer() {
 		doneChan <- true
 	}()
 
-	log.Printf("🎧 Waiting for events. Press CTRL+C to exit")
+	log.Printf("Waiting for events. Press CTRL+C to exit")
 
 	// 5. BLOCK HERE until a signal is received
 	<-sigChan
@@ -119,60 +121,8 @@ func StartConsumer() {
 
 	log.Println("Shutting signal received...")
 
-	// 6. Close the channel to stop the goroutine
-	close(doneChan)
-
 	// 7. Wait for the goroutine to finish
 	<-doneChan
 
 	log.Println("Consumer exited cleanly")
-}
-
-// PRODUCT HANDLERS
-func handleProductInsert(p ProductEventPayload) {
-	product := models.Product{
-		Description: p.Description,
-		Quantity:    p.Quantity,
-	}
-	_, err := database.ProductCollection.InsertOne(nil, product)
-	if err != nil {
-		log.Printf("Product Insert Failed: %v", err)
-	} else {
-		log.Printf("Inserted Product: %s", p.Description)
-	}
-}
-
-//ORDER HANDLERS
-
-func handleOrderInsert(order models.Order) {
-
-	_, err := database.OrderCollection.InsertOne(nil, order)
-	if err != nil {
-		log.Printf("Order Insert Failed: %v", err)
-	} else {
-		log.Printf("Inserted Order: %s", order.ID)
-	}
-}
-
-func handleOrderUpdate(order models.Order) {
-	filter := bson.M{"_id": order.ID}
-	update := bson.M{"$set": order}
-	opts := options.Update().SetUpsert(true) // Upsert to be safe? Or just update.
-
-	_, err := database.OrderCollection.UpdateOne(nil, filter, update, opts)
-	if err != nil {
-		log.Printf(" Order Update Failed: %v", err)
-	} else {
-		log.Printf("🔄 Updated Order: %s", order.ID)
-	}
-}
-
-func handleOrderDelete(order models.Order) {
-	filter := bson.M{"_id": order.ID}
-	_, err := database.OrderCollection.DeleteOne(nil, filter)
-	if err != nil {
-		log.Printf(" Order Delete Failed: %v", err)
-	} else {
-		log.Printf("🗑️ Deleted Order: %s", order.ID)
-	}
 }

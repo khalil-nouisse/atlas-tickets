@@ -1,12 +1,13 @@
 package main
 
 import (
-	mongodb "query-service/database/mongo"
-	postgresdb "query-service/database/postgres"
-	redisdb "query-service/database/redis"
+	"log"
+	"query-service/database/mongo"
+	"query-service/database/postgres"
+	"query-service/database/redis"
 	_ "query-service/docs"
 	"query-service/events"
-	"query-service/handlers"
+	"query-service/services"
 
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
@@ -19,27 +20,28 @@ import (
 // @host localhost:8081
 // @BasePath /
 func main() {
-	//connect to mongoDB
-	mongodb.ConnectDB()
 
-	//connect to redis
-	redisdb.GetRedisClient()
+	//CREATE DEPENDENCIES
+	pgPool := postgres.GetPostgresClient()
+	redisClient := redis.GetRedisClient()
+	mongoClient := mongo.GetMongoCollection()
 
-	//connect to postgres
-	postgresdb.GetPostgresClient()
+	//INJECT DEPENDENCIES
+	bookingService := services.NewBookingService(pgPool, redisClient, mongoClient)
 
-	// Start RabbitMQ Consumer (Writes)
-	go events.StartConsumer()
-
-	// Start HTTP Server (Reads)
+	//Start HTTP Server in BACKGROUND
 	r := gin.Default()
-	r.GET("/tickets", handlers.GetAllProducts)
-	r.GET("/products", handlers.GetAllProducts)
-	r.GET("/orders", handlers.GetAllOrders)
-	r.GET("/orders/:id", handlers.GetOrder)
-
-	//Swagger
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-	r.Run(":8081") // Listen on port 8081
+	go func() {
+		log.Println("🚀 HTTP Server running on :8081")
+		if err := r.Run(":8081"); err != nil {
+			log.Fatalf("HTTP Server Failed: %v", err)
+		}
+	}()
+
+	//Start Consumer in FOREGROUND (Blocking)
+	//This function contains the "Wait for CTRL+C" logic, so we let it hold the main thread.
+	log.Println("RabbitMQ Consumer Starting...")
+	events.StartConsumer(bookingService)
 }
