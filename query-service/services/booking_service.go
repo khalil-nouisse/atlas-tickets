@@ -28,7 +28,7 @@ func NewBookingService(pg *pgxpool.Pool, r *redis.Client, m *mongo.Collection) *
 	}
 }
 
-// 1. The Public API for Booking
+// The Public API for Booking
 func (s *BookingService) ProcessTicketRequest(req models.TicketRequest) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -46,7 +46,7 @@ func (s *BookingService) ProcessTicketRequest(req models.TicketRequest) error {
 		return nil // Return nil so RabbitMQ knows we handled it (don't retry)
 	}
 
-	// 2 - CQRS Softe Update (Redis , Mongo)
+	// CQRS Softe Update (Redis , Mongo)
 	err = s.updateReadModels(ctx, req, booking)
 	if err != nil {
 		log.Printf("Soft Update Failed : %v", err)
@@ -56,7 +56,7 @@ func (s *BookingService) ProcessTicketRequest(req models.TicketRequest) error {
 
 }
 
-// 2. The Private Helper for Postgres (The ACID Logic)
+// The Private Helper for Postgres (The ACID Logic)
 func (s *BookingService) executePurchase(ctx context.Context, req models.TicketRequest) (*models.Booking, error) {
 	//start transaction
 	tx, err := s.Postgres.Begin(ctx)
