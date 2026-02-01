@@ -57,7 +57,7 @@ db.testConnection()
   .then(() => {
     // Start HTTP Server
     app.listen(5000, () => {
-      console.log("🚀 CONNECTED TO RABBITMQ & SERVER RUNNING ON PORT 5000");
+      console.log(" CONNECTED TO RABBITMQ & SERVER RUNNING ON PORT 5000");
     });
   })
   .catch((err) => {

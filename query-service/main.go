@@ -39,7 +39,7 @@ func main() {
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	go func() {
-		log.Println("🚀 HTTP Server running on :8081")
+		log.Println(" HTTP Server running on :8081")
 		if err := r.Run(":8081"); err != nil {
 			log.Fatalf("HTTP Server Failed: %v", err)
 		}

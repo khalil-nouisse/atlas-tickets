@@ -1,5 +1,5 @@
 -- A. Users Table
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     user_id SERIAL PRIMARY KEY,
     email VARCHAR(255) UNIQUE NOT NULL,
     full_name VARCHAR(100),
@@ -7,7 +7,7 @@ CREATE TABLE users (
 );
 
 -- B. Matches Table (AFCON Context)
-CREATE TABLE matches (
+CREATE TABLE IF NOT EXISTS matches (
     match_id SERIAL PRIMARY KEY,
     home_team VARCHAR(50) NOT NULL,
     away_team VARCHAR(50) NOT NULL,
@@ -17,7 +17,7 @@ CREATE TABLE matches (
 );
 
 -- C. Inventory Table (Category Based + Optimistic Locking)
-CREATE TABLE ticket_inventory (
+CREATE TABLE IF NOT EXISTS ticket_inventory (
     inventory_id SERIAL PRIMARY KEY,
     match_id INT REFERENCES matches(match_id),
     category VARCHAR(20) NOT NULL, -- e.g., 'VIP', 'CAT1'
@@ -31,7 +31,7 @@ CREATE TABLE ticket_inventory (
 );
 
 -- D. Bookings Table (The Transaction Log)
-CREATE TABLE bookings (
+CREATE TABLE IF NOT EXISTS bookings (
     booking_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id INT REFERENCES users(user_id),
     match_id INT REFERENCES matches(match_id),

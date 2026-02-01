@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"query-service/models"
 	service "query-service/services"
+	"sync"
 	"syscall"
 	"time"
 
@@ -20,7 +21,7 @@ type EventWrapper struct {
 	Data      json.RawMessage `json:"data"`
 }
 
-// ProductEventPayload matches the payload sent by producer
+// ProductEventPayload matches the payload sent by producerˇ
 type ProductEventPayload struct {
 	Description string  `json:"p_desc"`
 	Quantity    float64 `json:"qte"`
@@ -37,6 +38,7 @@ func StartConsumer(bookingService *service.BookingService) {
 	var conn *amqp.Connection
 	var err error
 	maxRetries := 15
+	maxWorkers := 10
 
 	for i := 0; i < maxRetries; i++ {
 		log.Printf("Attempting to connect to RabbitMQ (Attempt %d/%d)...", i+1, maxRetries)
@@ -62,14 +64,37 @@ func StartConsumer(bookingService *service.BookingService) {
 		log.Fatalf("Failed to open a channel: %v", err)
 	}
 
-	//define the queue
-	q, err := ch.QueueDeclare(queueName, true, false, false, false, nil)
+	//define the queue and ensures the queue exists
+	q, err := ch.QueueDeclare(queueName,
+		true,  //durable
+		false, //delete when unused
+		false, //exclusive
+		false, //no-wait
+		nil,   //args
+	)
 	if err != nil {
 		log.Fatalf("Failed to declare queue: %v", err)
 	}
 
-	//start consuming.                   | false for disabling auto ack that garentee presistance  , Only after success, manually run: d.Ack(false) to delete the data. from the mthe message broker
-	msgs, err := ch.Consume(q.Name, "", false, false, false, false, nil)
+	err = ch.Qos(
+		maxWorkers, // prefetch count
+		0,          // prefetch size
+		false,      // global
+	)
+	if err != nil {
+		log.Fatalf("Failed to set QoS: %v", err)
+	}
+
+	//start consuming.
+	msgs, err := ch.Consume(
+		q.Name, // queue
+		"",     // consumer
+		false,  // auto-ack - by disabling it we garentee that the message will be deleted from the queue only after the consumer successfully processes it
+		false,  // exclusive
+		false,  // no-local
+		false,  // no-wait
+		nil,    // args
+	)
 	if err != nil {
 		log.Fatalf("Failed to register consumer: %v", err)
 	}
@@ -78,62 +103,76 @@ func StartConsumer(bookingService *service.BookingService) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// 4. Create a "Done" channel to coordinate shutdown
+	//"Done" channel to coordinate shutdown
 	// We use this to tell the main thread: "Okay, the consumer loop has actually finished."
 	doneChan := make(chan bool)
+	sem := make(chan bool, maxWorkers)
+	var wg sync.WaitGroup
 
 	go func() {
-		for d := range msgs {
-			var wrapper EventWrapper
-			if err := json.Unmarshal(d.Body, &wrapper); err != nil {
-				log.Printf("Error parsing wrapper: %v", err)
-				d.Ack(false)
-				continue
-			}
+		for msg := range msgs {
+			sem <- true
+			wg.Add(1)
 
-			switch wrapper.Event {
-			case "TICKET_REQUESTED":
-				var payload models.TicketRequest
-				if err := json.Unmarshal(wrapper.Data, &payload); err != nil {
-					log.Printf("Error parsing ticket request payload: %v", err)
+			go func(d amqp.Delivery) {
+
+				defer func() {
+					<-sem
+					wg.Done()
+				}()
+
+				var wrapper EventWrapper
+				if err := json.Unmarshal(d.Body, &wrapper); err != nil {
+					log.Printf("Error parsing wrapper: %v", err)
 					d.Ack(false)
-					continue
+					return
 				}
 
-				// Manually inject the RequestID from the wrapper
-				payload.RequestID = wrapper.RequestID
+				switch wrapper.Event {
+				case "TICKET_REQUESTED":
+					var payload models.TicketRequest
+					if err := json.Unmarshal(wrapper.Data, &payload); err != nil {
+						log.Printf("Error parsing ticket request payload: %v", err)
+						d.Ack(false)
+						return
+					}
 
-				log.Printf("Processing Ticket Request: %s", payload.RequestID)
+					// Manually inject the RequestID from the wrapper
+					payload.RequestID = wrapper.RequestID
 
-				err = bookingService.ProcessTicketRequest(payload)
-				if err != nil {
-					log.Printf("Error processing ticket request: %v", err)
+					log.Printf("Processing Ticket Request: %s", payload.RequestID)
+
+					err = bookingService.ProcessTicketRequest(payload)
+					if err != nil {
+						log.Printf("Error processing ticket request: %v", err)
+						d.Ack(false)
+						return
+					}
+
+					//tell rabbitMQ : DONE , dont resend the data "delete it"
 					d.Ack(false)
-					continue
+				default:
+					log.Printf("Unknown Event Type: %s", wrapper.Event)
+					d.Ack(false)
 				}
-
-				//tell rabbitMQ : DONE , dont resend the data "delete it"
-				d.Ack(false)
-
-			default:
-				log.Printf("Unknown Event Type: %s", wrapper.Event)
-			}
+			}(msg)
 		}
 		// If we get here, it means the 'msgs' channel was closed (connection died or app is stopping)
 		log.Println("Consumer loop finished")
+		wg.Wait()
 		doneChan <- true
 	}()
 
 	log.Printf("Waiting for events. Press CTRL+C to exit")
 
-	// 5. BLOCK HERE until a signal is received
+	//BLOCK HERE until a signal is received
 	<-sigChan
 
 	conn.Close() //closing connection -> close channel
 
 	log.Println("Shutting signal received...")
 
-	// 7. Wait for the goroutine to finish
+	// Wait for the goroutine to finish
 	<-doneChan
 
 	log.Println("Consumer exited cleanly")

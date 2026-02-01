@@ -36,7 +36,7 @@ The system is divided into two distinct parts:
 * **Query Worker:** Go, MongoDB (NoSQL)
 * **Caching (Optional):** Redis
 
-## 🚀 Getting Started
+##  Getting Started
 
 This project is fully containerized. You can spin up the entire infrastructure with a single command.
 
