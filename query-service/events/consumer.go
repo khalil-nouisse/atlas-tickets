@@ -7,10 +7,12 @@ import (
 	"os/signal"
 	"query-service/models"
 	service "query-service/services"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/joho/godotenv"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -28,6 +30,10 @@ type ProductEventPayload struct {
 }
 
 func StartConsumer(bookingService *service.BookingService) {
+	// Load .env file
+	if err := godotenv.Load(); err != nil {
+		log.Println("No .env file found, using environment variables")
+	}
 
 	url := os.Getenv("RABBITMQ_URL")
 	queueName := os.Getenv("RABBITMQ_TICKET_QUEUE")
@@ -38,7 +44,13 @@ func StartConsumer(bookingService *service.BookingService) {
 	var conn *amqp.Connection
 	var err error
 	maxRetries := 15
-	maxWorkers := 10
+	value := os.Getenv("WORKER_POOL_SIZE")
+	maxWorkers, err := strconv.Atoi(value)
+	if err != nil {
+		maxWorkers = 4 // default
+	}
+
+	log.Println("Workers: ", maxWorkers)
 
 	for i := 0; i < maxRetries; i++ {
 		log.Printf("Attempting to connect to RabbitMQ (Attempt %d/%d)...", i+1, maxRetries)

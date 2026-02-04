@@ -1,0 +1,93 @@
+# database -> StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: atlastickets
+spec:
+  # Name of the service
+  serviceName: postgres-service
+  
+  # Number of postgres instances
+  replicas: 1
+  
+  # How to find the pods this StatefulSet manages , This says: "Manage all pods with the label app: postgres"
+  selector:
+    matchLabels:
+      app: postgres
+  
+  # Template for creating pods
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      nodeSelector:
+        workload-type: data
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        
+        # Port postgres listens on
+        ports:
+        - containerPort: 5432
+          name: postgres
+        
+        # Environment variables from ConfigMap and Secrets
+        env:
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: atlastickets-config
+              key: POSTGRES_DB
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: atlastickets-secrets
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: atlastickets-secrets
+              key: POSTGRES_PASSWORD
+        - name: PGDATA
+          #Moves actual DB files into a subdirectory
+          value: /var/lib/postgresql/data/pgdata
+        
+        # Mount persistent storage
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+        
+        # Resource limits (prevents one pod from using all resources)
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+  
+  # Request persistent storage of each pod
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-storage
+    spec:
+      accessModes: ["ReadWriteOnce"]  #Only one pod can mount this volume (database requirement)
+      resources:
+        requests:
+          storage: 2Gi   # Request 2GB of disk space
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  namespace: atlastickets
+spec:
+  clusterIP: None
+  selector:
+    app: postgres
+  ports:
+  - port: 5432
+    

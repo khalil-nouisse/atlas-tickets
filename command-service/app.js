@@ -37,8 +37,35 @@ async function initializeDatabase() {
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 
+// Health check endpoint (liveness)
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'UP', timestamp: new Date() });
+  // Simple check - is the process running?
+  res.status(200).json({ status: 'ok' });
+});
+
+// Readiness check
+app.get('/ready', async (req, res) => {
+  try {
+    // Check RabbitMQ connection
+    if (!rabbitmqChannel || !rabbitmqChannel.connection) {
+      return res.status(503).json({ 
+        status: 'not ready', 
+        reason: 'RabbitMQ not connected' 
+      });
+    }
+    
+    res.status(200).json({ 
+      status: 'ready',
+      connections: {
+        rabbitmq: 'connected'
+      }
+    });
+  } catch (error) {
+    res.status(503).json({ 
+      status: 'not ready', 
+      error: error.message 
+    });
+  }
 });
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));

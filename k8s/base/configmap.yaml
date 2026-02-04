@@ -16,12 +16,12 @@ data:
   COLLECTION_NAME : "tickets"
   
   # Redis
-  REDIS_ADDRESS : "localhost:6379"
+  REDIS_ADDRESS : "redis:6379"
   REDIS_DB : 0
   
   # RabbitMQ : Message Queue connection info
   RABBITMQ_TICKET_QUEUE : "ticket_queue"
-  RABBITMQ_PORT : 
+  RABBITMQ_PORT : 5672
   
   # Application settings
   WORKER_POOL_SIZE: "10"
