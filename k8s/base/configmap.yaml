@@ -1,0 +1,27 @@
+#ConfigMap: Stores configuration data (non-sensitive) that the apps need.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: atlastickets-config
+  namespace: atlastickets
+data:
+  # Database connection info
+  # PostgresDB
+  DB_USER : "atlas"
+  DB_PORT : 5432
+  DB_NAME : "atlastickets"
+
+  # MongoDB
+  COLLECTION_NAME : "tickets"
+  
+  # Redis
+  REDIS_ADDRESS : "localhost:6379"
+  REDIS_DB : 0
+  
+  # RabbitMQ : Message Queue connection info
+  RABBITMQ_TICKET_QUEUE : "ticket_queue"
+  RABBITMQ_PORT : 
+  
+  # Application settings
+  WORKER_POOL_SIZE: "10"

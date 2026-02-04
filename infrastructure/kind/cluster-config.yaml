@@ -1,0 +1,36 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: atlastickets-dev
+
+nodes:
+  # Control plane
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 80
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 443
+        protocol: TCP
+
+  # Worker node 1 - application workloads
+  - role: worker
+    labels:
+      workload-type: compute
+
+  # Worker node 2 - application workloads
+  - role: worker
+    labels:
+      workload-type: compute
+
+  # Worker node 3 - data services
+  - role: worker
+    labels:
+      workload-type: data
