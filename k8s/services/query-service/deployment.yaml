@@ -60,7 +60,7 @@ kind: Service
 metadata:
   name: query-service
   namespace: atlastickets
-  labels:
+  labels:''
     component: query-service
 spec:
   selector:
@@ -70,3 +70,5 @@ spec:
     targetPort: 4000
     name: http
   type: ClusterIP  # Internal only (accessed via Ingress)
+
+  

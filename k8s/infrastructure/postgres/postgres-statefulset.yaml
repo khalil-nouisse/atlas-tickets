@@ -23,6 +23,7 @@ spec:
         app: postgres
     spec:
       nodeSelector:
+        #to run on the data node
         workload-type: data
       containers:
       - name: postgres

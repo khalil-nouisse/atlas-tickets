@@ -1,0 +1,22 @@
+# query-ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: query-ingress
+  namespace: atlastickets
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - host: query.localhost
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: query-service
+            port:
+              number: 4000  # the port other pods / Ingress see
+
+              

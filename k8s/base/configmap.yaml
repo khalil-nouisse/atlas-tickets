@@ -6,22 +6,19 @@ metadata:
   name: atlastickets-config
   namespace: atlastickets
 data:
-  # Database connection info
-  # PostgresDB
-  DB_USER : "atlas"
-  DB_PORT : 5432
-  DB_NAME : "atlastickets"
-
+  #Configuration used by Service
+  # PostgreSQL
+  POSTGRES_DB: "atlastickets"
   # MongoDB
-  COLLECTION_NAME : "tickets"
-  
+  MONGO_DB: "tickets"
+
   # Redis
-  REDIS_ADDRESS : "redis:6379"
-  REDIS_DB : 0
-  
-  # RabbitMQ : Message Queue connection info
-  RABBITMQ_TICKET_QUEUE : "ticket_queue"
-  RABBITMQ_PORT : 5672
-  
-  # Application settings
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  REDIS_DB_INDEX: "0"
+
+  # RabbitMQ
+  RABBITMQ_QUEUE_TICKET: "ticket_queue"
+
+  # Application tuning
   WORKER_POOL_SIZE: "10"

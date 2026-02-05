@@ -1,0 +1,103 @@
+# k8s/services/command-service/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: command-service
+  namespace: atlastickets
+  labels:
+    app: atlastickets
+    component: command-service
+spec:
+  replicas: 3  # Run 3 instances for high availability
+  
+  selector:
+    matchLabels:
+      component: command-service
+  
+  template:
+    metadata:
+      labels:
+        component: command-service
+    spec:
+      containers:
+      - name: command-service
+        image: atlastickets/command-service:latest
+        imagePullPolicy: IfNotPresent  # Use local image (for kind)
+        
+        ports:
+        - containerPort: 3000  # Node.js Express port
+          name: http
+        
+        env:
+        # RabbitMQ connection
+        - name: RABBITMQ_URL
+          valueFrom:
+            secretKeyRef:
+              name: atlastickets-secrets
+              key: RABBITMQ_URL
+        
+        # Queue name for ticket purchase events
+        - name: RABBITMQ_QUEUE_TICKET
+          valueFrom:
+            configMapKeyRef:
+              name: atlastickets-config
+              key: RABBITMQ_QUEUE_TICKET
+        
+        # Service name (for logging)
+        - name: SERVICE_NAME
+          value: "command-service"
+        
+        # Node environment
+        - name: NODE_ENV
+          value: "production"
+        
+        # Port configuration
+        - name: PORT
+          value: "3000"
+        
+        # Resource limits
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        
+        # Liveness probe - Kubernetes restarts pod if this fails
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30  # Wait 30s before first check
+          periodSeconds: 10        # Check every 10s
+          timeoutSeconds: 5        # Timeout after 5s
+          failureThreshold: 3      # Restart after 3 failures
+        
+        # Readiness probe - Pod receives traffic only if this passes
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 3000
+          initialDelaySeconds: 5   # Start checking after 5s
+          periodSeconds: 5         # Check every 5s
+          timeoutSeconds: 3        # Timeout after 3s
+          failureThreshold: 3      # Mark unready after 3 failures
+
+---
+# Service to expose command-service
+apiVersion: v1
+kind: Service
+metadata:
+  name: command-service
+  namespace: atlastickets
+  labels:
+    component: command-service
+spec:
+  selector:
+    component: command-service
+  ports:
+  - port: 3000
+    targetPort: 3000
+    name: http
+  type: ClusterIP  # Internal only (accessed via Ingress)
