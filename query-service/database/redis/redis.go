@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 )
 
@@ -57,4 +58,35 @@ func connectRedis() *redis.Client {
 	})
 
 	return Client
+}
+
+// warm cach : Initialize the cache available ticket count to Inventory total_seats - sold_seats  (to be decremented when purshased)
+func WarmCach(ctx context.Context, db *pgxpool.Pool, rdb *redis.Client) error {
+	// Fetch current inventory from Postgres
+	rows, err := db.Query(ctx, "SELECT match_id, category, total_seats, sold_seats FROM ticket_inventory")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var matchID int
+		var category string
+		var total, sold int
+		if err := rows.Scan(&matchID, &category, &total, &sold); err != nil {
+			return err
+		}
+
+		// Calculate remaining seats
+		remaining := total - sold
+		key := fmt.Sprintf("match:%d:category:%s", matchID, category)
+
+		// 3. SET the value in Redis
+		err = rdb.Set(ctx, key, remaining, 0).Err()
+		if err != nil {
+			log.Printf("Failed to warm cache for %s: %v", key, err)
+		}
+	}
+	log.Println("✅ Redis Cache Warmed Successfully")
+	return nil
 }

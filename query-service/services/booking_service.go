@@ -20,6 +20,7 @@ type BookingService struct {
 	Mongo    *mongo.Collection
 }
 
+// For dependency enjecction
 func NewBookingService(pg *pgxpool.Pool, r *redis.Client, m *mongo.Collection) *BookingService {
 	return &BookingService{
 		Postgres: pg,
@@ -30,7 +31,7 @@ func NewBookingService(pg *pgxpool.Pool, r *redis.Client, m *mongo.Collection) *
 
 // The Public API for Booking
 func (s *BookingService) ProcessTicketRequest(req models.TicketRequest) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	// 1 - Hard Transaction postgres (ACID)

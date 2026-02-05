@@ -36,8 +36,8 @@ func main() {
 
 	//Start HTTP Server in BACKGROUND
 	r := gin.Default()
+	r.GET("/tickets/available", services.GetAvailabilityHandler(redisClient, mongoClient))
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-
 	go func() {
 		log.Println(" HTTP Server running on :8081")
 		if err := r.Run(":8081"); err != nil {
