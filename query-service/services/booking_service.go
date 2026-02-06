@@ -7,6 +7,8 @@ import (
 	"query-service/models"
 	"time"
 
+	"query-service/metrics"
+
 	"github.com/go-redis/redis/v8"
 
 	"github.com/jackc/pgx/v5"
@@ -92,6 +94,7 @@ func (s *BookingService) executePurchase(ctx context.Context, req models.TicketR
 	//Quantity check
 	if req.Quantity > inventory.TotalSeats-inventory.SoldSeats {
 		log.Printf("SOLD OUT: Match %d (Req: %d, Left: %d)", req.MatchID, req.Quantity, inventory.TotalSeats-inventory.SoldSeats)
+		metrics.SoldOutEvents.Inc()
 		//record SOLDOUT "Booking"
 		recordFailed := `INSERT INTO bookings (booking_id, user_id, match_id, category, quantity, status, created_at) 
                          VALUES ($1, $2, $3, $4, $5, $6, $7)`
@@ -149,6 +152,7 @@ func (s *BookingService) executePurchase(ctx context.Context, req models.TicketR
 
 	log.Printf("Postgres Transaction Committed for Request %s", req.RequestID)
 	log.Printf("Booked %d tickets for Match %d - Category %s", req.Quantity, req.MatchID, req.Category)
+	metrics.ConfirmedBookings.Inc()
 
 	return &models.Booking{
 		BookingID: req.RequestID,

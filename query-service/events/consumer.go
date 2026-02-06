@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"query-service/metrics"
+
 	"github.com/joho/godotenv"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -132,9 +134,11 @@ func StartConsumer(bookingService *service.BookingService) {
 			go func(d amqp.Delivery) {
 
 				defer func() {
+					metrics.ActiveWorkers.Dec()
 					<-sem
 					wg.Done()
 				}()
+				metrics.ActiveWorkers.Inc()
 
 				var wrapper EventWrapper
 				if err := json.Unmarshal(d.Body, &wrapper); err != nil {

@@ -1,0 +1,18 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: query-service-monitor
+  namespace: monitoring # The ServiceMonitor itself lives in 'monitoring' (where Prometheus is)
+  labels:
+    release: prometheus # Required for default Prometheus configuration to pick it up
+spec:
+  selector:
+    matchLabels:
+      app: query-service # Matches the Service label in 'atlastickets' namespace
+  namespaceSelector:
+    matchNames: #The namespaceSelector gives the Prometheus Operator permission to "cross the border" from the monitoring namespace into default to find your targets.
+    - atlastickets # Explicitly look in 'atlastickets' namespace
+  endpoints:
+  - port: http # Matches the port name in your Service definition
+    path: /metrics
+    interval: 15s
