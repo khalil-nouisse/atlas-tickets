@@ -99,6 +99,6 @@ func WarmCach(ctx context.Context, db *pgxpool.Pool, rdb *redis.Client) error {
 			log.Printf("Failed to warm cache for %s: %v", key, err)
 		}
 	}
-	log.Println("✅ Redis Cache Warmed Successfully")
+	log.Println("Redis Cache Warmed Successfully")
 	return nil
 }
