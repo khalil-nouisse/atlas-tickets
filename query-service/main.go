@@ -9,6 +9,8 @@ import (
 	"query-service/events"
 	"query-service/services"
 
+	"os"
+
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	swaggerFiles "github.com/swaggo/files"
@@ -44,8 +46,13 @@ func main() {
 	r.GET("/tickets/available", services.GetAvailabilityHandler(redisClient, mongoClient))
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	go func() {
-		log.Println(" HTTP Server running on :8081")
-		if err := r.Run(":8081"); err != nil {
+		port := os.Getenv("PORT")
+		if port == "" {
+			port = "8081"
+		}
+		addr := ":" + port
+		log.Println(" HTTP Server running on " + addr)
+		if err := r.Run(addr); err != nil {
 			log.Fatalf("HTTP Server Failed: %v", err)
 		}
 	}()

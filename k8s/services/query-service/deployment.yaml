@@ -53,6 +53,8 @@ spec:
             configMapKeyRef:
               name: atlastickets-config
               key: WORKER_POOL_SIZE
+        - name: PORT
+          value: "4000"
         resources:
           requests:
             memory: "256Mi"
