@@ -163,9 +163,17 @@ func (s *BookingService) executePurchase(ctx context.Context, req models.TicketR
 
 func (s *BookingService) updateReadModels(ctx context.Context, req models.TicketRequest, booking *models.Booking) error {
 
-	//Update Redis Cache
+	// Update Redis Cache (Safe Decrement)
+	// Lua script: Check if key exists. If yes, DECRBY. If no, do nothing (Read-Through will fix it next time).
 	redisKey := fmt.Sprintf("match:%d:category:%s", req.MatchID, req.Category)
-	err := s.Redis.DecrBy(ctx, redisKey, int64(req.Quantity)).Err()
+	script := `
+		if redis.call("EXISTS", KEYS[1]) == 1 then
+			return redis.call("DECRBY", KEYS[1], ARGV[1])
+		else
+			return 0
+		end
+	`
+	err := s.Redis.Eval(ctx, script, []string{redisKey}, req.Quantity).Err()
 	if err != nil {
 		log.Printf("Redis Update Failed: %v", err)
 	}

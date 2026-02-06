@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: query-service
-        image: atlastickets/query-service:v4
+        image: atlastickets/query-service:v5
         imagePullPolicy: IfNotPresent 
         
         ports:

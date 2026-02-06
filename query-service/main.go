@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"query-service/database/mongo"
 	"query-service/database/postgres"
@@ -32,6 +33,14 @@ func main() {
 	pgPool := postgres.GetPostgresClient()
 	redisClient := redis.GetRedisClient()
 	mongoClient := mongo.GetMongoCollection()
+
+	// Warm the Cache
+	go func() {
+		// Run in background so we don't block startup if expensive
+		if err := redis.WarmCach(context.Background(), pgPool, redisClient); err != nil {
+			log.Printf("Failed to warm cache: %v", err)
+		}
+	}()
 
 	//INJECT DEPENDENCIES
 	bookingService := services.NewBookingService(pgPool, redisClient, mongoClient)
