@@ -30,7 +30,7 @@ We have successfully migrated the **Atlas Tickets** microservices architecture t
 
 ---
 
-## 📖 User Manual: How to Use the App
+##  User Manual: How to Use the App
 
 ### 1. Prerequisites
 Ensure your KIND cluster is running and all pods are ready:
