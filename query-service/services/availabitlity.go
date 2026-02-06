@@ -9,18 +9,21 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type AvailabilityCheck struct {
-	Redis *redis.Client
-	Mongo *mongo.Collection
+	Redis    *redis.Client
+	Mongo    *mongo.Collection
+	Postgres *pgxpool.Pool
 }
 
-func NewAvailabiltyCheck(redis *redis.Client, mongo *mongo.Collection) *AvailabilityCheck {
+func NewAvailabiltyCheck(redis *redis.Client, mongo *mongo.Collection, pg *pgxpool.Pool) *AvailabilityCheck {
 	return &AvailabilityCheck{
-		Redis: redis,
-		Mongo: mongo,
+		Redis:    redis,
+		Mongo:    mongo,
+		Postgres: pg,
 	}
 }
 
@@ -40,40 +43,26 @@ func (a *AvailabilityCheck) GetAvailability(req models.Inventory) (int, error) {
 	if err != redis.Nil {
 		return 0, err
 	}
-	return 0, fmt.Errorf("availability not found")
 
-	// TODO : mongo Fallback
+	// Cache miss → Postgres Fallback
+	var total, sold int
+	query := `SELECT total_seats, sold_seats FROM ticket_inventory WHERE match_id=$1 AND category=$2`
+	err = a.Postgres.QueryRow(ctx, query, req.MatchID, req.Category).Scan(&total, &sold)
+	if err != nil {
+		return 0, fmt.Errorf("availability not found (db)")
+	}
 
-	// // Cache miss → MongoDB
-	// type Result struct {
-	// 	TotalSeats int `bson:"totalSeats"`
-	// 	SoldSeats int `bson:"soldSeats"`
-	// }
+	available := total - sold
 
-	// filter := bson.M{
-	// 	"match_id": req.MatchID,
-	// 	"category": req.Category,
-	// }
+	// Populate Redis (Read Repair)
+	// Cache for 10 minutes
+	_ = a.Redis.Set(ctx, redisKey, available, 10*time.Minute).Err()
 
-	// opts := options.FindOne().SetProjection(bson.M{
-	// 	"totalSeats": 1,
-	// 	"_id":        0,
-	// })
-
-	// var result Result
-	// err = a.Mongo.FindOne(ctx, filter, opts).Decode(&result)
-	// if err != nil {
-	// 	return 0, err
-	// }
-
-	// // Store in Redis
-	// _ = a.Redis.Set(ctx, redisKey, result.TotalSeats, 10*time.Minute).Err()
-
-	// return result.TotalSeats, nil
+	return available, nil
 }
 
-func GetAvailabilityHandler(redis *redis.Client, mongo *mongo.Collection) gin.HandlerFunc {
-	service := NewAvailabiltyCheck(redis, mongo)
+func GetAvailabilityHandler(redis *redis.Client, mongo *mongo.Collection, pg *pgxpool.Pool) gin.HandlerFunc {
+	service := NewAvailabiltyCheck(redis, mongo, pg)
 
 	return func(c *gin.Context) {
 		matchIDStr := c.Query("match_id")

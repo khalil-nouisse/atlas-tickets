@@ -1,0 +1,155 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-init-scripts
+  namespace: atlastickets
+data:
+  01-schema.sql: |
+    -- A. Users Table
+    CREATE TABLE IF NOT EXISTS users (
+        user_id SERIAL PRIMARY KEY,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        full_name VARCHAR(100),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- B. Matches Table (AFCON Context)
+    CREATE TABLE IF NOT EXISTS matches (
+        match_id SERIAL PRIMARY KEY,
+        home_team VARCHAR(50) NOT NULL,
+        away_team VARCHAR(50) NOT NULL,
+        match_date TIMESTAMP NOT NULL,
+        stadium VARCHAR(100) NOT NULL,
+        is_active BOOLEAN DEFAULT TRUE
+    );
+
+    -- C. Inventory Table (Category Based + Optimistic Locking)
+    CREATE TABLE IF NOT EXISTS ticket_inventory (
+        inventory_id SERIAL PRIMARY KEY,
+        match_id INT REFERENCES matches(match_id),
+        category VARCHAR(20) NOT NULL, -- e.g., 'VIP', 'CAT1'
+        price DECIMAL(10, 2) NOT NULL,
+        total_seats INT NOT NULL,
+        sold_seats INT DEFAULT 0,
+        version INT DEFAULT 1, -- Optimistic Locking for Concurrency
+        
+        UNIQUE(match_id, category),
+        CONSTRAINT check_capacity CHECK (sold_seats <= total_seats)
+    );
+
+    -- D. Bookings Table (The Transaction Log)
+    CREATE TABLE IF NOT EXISTS bookings (
+        booking_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id INT REFERENCES users(user_id),
+        match_id INT REFERENCES matches(match_id),
+        category VARCHAR(20) NOT NULL,
+        quantity INT NOT NULL,
+        status VARCHAR(20) DEFAULT 'PENDING', -- 'PENDING', 'CONFIRMED', 'FAILED', 'SOLD_OUT'
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+  02-seed-data.sql: |
+    -- 2. SEED DATA (Initial Mock Data)
+    -- Insert a test User (You)
+    DELETE FROM users WHERE email = 'demo@atlastickets.ma' AND user_id != 1;
+    INSERT INTO users (user_id, email, full_name) 
+    VALUES (1, 'demo@atlastickets.ma', 'DevOps Engineer')
+    ON CONFLICT (user_id) DO NOTHING;
+
+    DELETE FROM users WHERE email = 'test@atlastickets.ma' AND user_id != 2;
+    INSERT INTO users (user_id, email, full_name) 
+    VALUES (2, 'test@atlastickets.ma', 'Test User')
+    ON CONFLICT (user_id) DO NOTHING;
+
+    -- Insert the Big Match: Morocco vs South Africa
+    INSERT INTO matches (match_id, home_team, away_team, match_date, stadium) 
+    VALUES (1, 'Morocco', 'South Africa', '2026-01-30 20:00:00', 'Stade Adrar - Agadir')
+    ON CONFLICT (match_id) DO NOTHING;
+
+    -- Insert Inventory for that Match (Match ID 1)
+    -- VIP: 50 seats available
+    -- CAT1: 100 seats available (Low number to test "Sold Out" logic easily)
+    INSERT INTO ticket_inventory (match_id, category, price, total_seats, sold_seats) 
+    VALUES 
+    (1, 'VIP', 2000.00, 50, 0),
+    (1, 'CAT1', 500.00, 100, 0)
+    ON CONFLICT (match_id, category) DO NOTHING;
+
+    -- Match 2: Real Madrid vs FC Barcelona
+    INSERT INTO matches (match_id, home_team, away_team, match_date, stadium)
+    VALUES (2, 'Real Madrid', 'FC Barcelona', '2026-02-15 21:00:00', 'Santiago Bernabéu')
+    ON CONFLICT (match_id) DO NOTHING;
+
+    -- Inventory for Match 2
+    INSERT INTO ticket_inventory (match_id, category, price, total_seats, sold_seats)
+    VALUES
+    (2, 'VIP', 3000.00, 20, 0),
+    (2, 'CAT1', 800.00, 150, 0)
+    ON CONFLICT (match_id, category) DO NOTHING;
+
+  03-indexes.sql: |
+    -- Indexes for performance
+    CREATE INDEX IF NOT EXISTS idx_inventory_match ON ticket_inventory(match_id);
+    CREATE INDEX IF NOT EXISTS idx_bookings_user ON bookings(user_id);
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-init-job
+  namespace: atlastickets
+spec:
+  template:
+    spec:
+      containers:
+      - name: db-initializer
+        image: postgres:15-alpine
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            echo "Waiting for Postgres Service..."
+            until pg_isready -h postgres-service -U $POSTGRES_USER; do
+              echo "Waiting for database..."
+              sleep 2
+            done
+
+            echo "Running Schema Script..."
+            psql -h postgres-service -U $POSTGRES_USER -d $POSTGRES_DB -f /scripts/01-schema.sql
+            
+            echo "Running Seed Data Script..."
+            psql -h postgres-service -U $POSTGRES_USER -d $POSTGRES_DB -f /scripts/02-seed-data.sql
+            
+            echo "Running Indexes Script..."
+            psql -h postgres-service -U $POSTGRES_USER -d $POSTGRES_DB -f /scripts/03-indexes.sql
+            
+            echo "Database Initialization Complete!"
+        env:
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: atlastickets-config
+              key: POSTGRES_DB
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: atlastickets-secrets
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: atlastickets-secrets
+              key: POSTGRES_PASSWORD
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: atlastickets-secrets
+              key: POSTGRES_PASSWORD
+        volumeMounts:
+        - name: scripts-volume
+          mountPath: /scripts
+      restartPolicy: Never
+      volumes:
+      - name: scripts-volume
+        configMap:
+          name: db-init-scripts
+  backoffLimit: 4

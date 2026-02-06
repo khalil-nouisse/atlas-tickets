@@ -43,7 +43,7 @@ func main() {
 			"status": "ok",
 		})
 	})
-	r.GET("/tickets/available", services.GetAvailabilityHandler(redisClient, mongoClient))
+	r.GET("/tickets/available", services.GetAvailabilityHandler(redisClient, mongoClient, pgPool))
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	go func() {
 		port := os.Getenv("PORT")

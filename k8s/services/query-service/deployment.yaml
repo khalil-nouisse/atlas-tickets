@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: query-service
-        image: atlastickets/query-service:latest
+        image: atlastickets/query-service:v4
         imagePullPolicy: IfNotPresent 
         
         ports:
@@ -55,6 +55,12 @@ spec:
               key: WORKER_POOL_SIZE
         - name: PORT
           value: "4000"
+        - name: RABBITMQ_TICKET_QUEUE
+          value: "ticket_queue"
+        - name: DB_NAME
+          value: "tickets_read_db"
+        - name: COLLECTION_NAME
+          value: "bookings"
         resources:
           requests:
             memory: "256Mi"

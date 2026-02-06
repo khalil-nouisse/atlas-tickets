@@ -56,8 +56,15 @@ func ConnectDB() {
 	fmt.Println(" Connected to MongoDB Successfully!")
 
 	// 6. Assign the collection
+	// 6. Assign the collection
 	dbName := os.Getenv("DB_NAME")
+	if dbName == "" {
+		dbName = "tickets_read_db"
+	}
 	colName := os.Getenv("COLLECTION_NAME")
+	if colName == "" {
+		colName = "bookings"
+	}
 	ProductCollection = client.Database(dbName).Collection(colName)
 	OrderCollection = client.Database(dbName).Collection("atlas-tickets")
 }

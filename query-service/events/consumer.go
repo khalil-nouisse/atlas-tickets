@@ -37,6 +37,9 @@ func StartConsumer(bookingService *service.BookingService) {
 
 	url := os.Getenv("RABBITMQ_URL")
 	queueName := os.Getenv("RABBITMQ_TICKET_QUEUE")
+	if queueName == "" {
+		queueName = "ticket_queue"
+	}
 	if url == "" {
 		url = "amqp://guest:guest@localhost:5672/"
 	}
