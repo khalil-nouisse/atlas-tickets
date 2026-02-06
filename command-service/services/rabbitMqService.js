@@ -57,7 +57,12 @@ const publishToQueue = async (queueName, data) => {
     }
 };
 
+const isConnected = () => {
+    return channel && connection;
+};
+
 module.exports = {
     connectRabbitMQ,
-    publishToQueue
+    publishToQueue,
+    isConnected
 };

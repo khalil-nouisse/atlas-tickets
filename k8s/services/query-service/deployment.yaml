@@ -17,6 +17,8 @@ spec:
       containers:
       - name: query-service
         image: atlastickets/query-service:latest
+        imagePullPolicy: IfNotPresent 
+        
         ports:
         - containerPort: 4000  # HTTP API for reads
           name: http
@@ -36,6 +38,11 @@ spec:
             configMapKeyRef:
               name: atlastickets-config
               key: REDIS_HOST
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: atlastickets-config
+              key: REDIS_PORT
         - name: RABBITMQ_URL
           valueFrom:
             secretKeyRef:
@@ -53,18 +60,18 @@ spec:
           limits:
             memory: "512Mi"
             cpu: "500m"
-
+---
 # Service to expose query-service
 apiVersion: v1
 kind: Service
 metadata:
   name: query-service
   namespace: atlastickets
-  labels:''
-    component: query-service
+  labels:
+    app: query-service
 spec:
   selector:
-    component: query-service
+    app: query-service
   ports:
   - port: 4000
     targetPort: 4000

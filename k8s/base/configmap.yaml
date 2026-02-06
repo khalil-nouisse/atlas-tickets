@@ -13,7 +13,7 @@ data:
   MONGO_DB: "tickets"
 
   # Redis
-  REDIS_HOST: "redis"
+  REDIS_HOST: "redis-service"
   REDIS_PORT: "6379"
   REDIS_DB_INDEX: "0"
 

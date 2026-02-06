@@ -36,6 +36,11 @@ func main() {
 
 	//Start HTTP Server in BACKGROUND
 	r := gin.Default()
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"status": "ok",
+		})
+	})
 	r.GET("/tickets/available", services.GetAvailabilityHandler(redisClient, mongoClient))
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	go func() {

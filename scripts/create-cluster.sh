@@ -13,7 +13,7 @@ kind delete cluster --name atlastickets-dev 2>/dev/null || true
 
 echo ""
 echo "Creating new Cluster"
-kind create cluster --name atlastickets-dev --config ../infrastructure/kind/cluster-config.yaml
+kind create cluster --name atlastickets-dev --config infrastructure/kind/cluster-config.yaml
 
 
 echo ""

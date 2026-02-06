@@ -38,6 +38,18 @@ func connectRedis() *redis.Client {
 		reddisPass := os.Getenv("REDIS_PASSWORD")
 		//reddisDB := os.Getenv("REDIS_DB")
 
+		// Fallback to HOST:PORT if ADDRESS is not set
+		if reddisAddr == "" {
+			host := os.Getenv("REDIS_HOST")
+			port := os.Getenv("REDIS_PORT")
+			if host != "" && port != "" {
+				reddisAddr = fmt.Sprintf("%s:%s", host, port)
+			} else {
+				// Default to localhost if nothing is set (for local dev without .env)
+				reddisAddr = "localhost:6379"
+			}
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
