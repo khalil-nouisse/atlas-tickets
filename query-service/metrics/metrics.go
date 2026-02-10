@@ -18,6 +18,12 @@ var (
 		Help: "The total number of rejected bookings due to no inventory",
 	})
 
+	// Track race condition events
+	RaceConditionEvents = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "atlastickets_bookings_race_condition_total",
+		Help: "The total number of bookings failed due to race conditions (optimistic locking)",
+	})
+
 	// Track active workers in the pool
 	ActiveWorkers = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "atlastickets_active_workers",

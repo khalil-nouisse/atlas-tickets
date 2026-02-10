@@ -2,6 +2,7 @@ package events
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"os"
 	"os/signal"
@@ -161,15 +162,34 @@ func StartConsumer(bookingService *service.BookingService) {
 
 					log.Printf("Processing Ticket Request: %s", payload.RequestID)
 
-					err = bookingService.ProcessTicketRequest(payload)
-					if err != nil {
-						log.Printf("Error processing ticket request: %v", err)
+					const maxRetries = 5
+					for attempt := 0; attempt <= maxRetries; attempt++ {
+						err = bookingService.ProcessTicketRequest(payload)
+
+						// BOOKING CONFIRMED OR SOLDOUT , NO RETIES
+						if err == nil {
+							d.Ack(false)
+							return
+						}
+
+						//version conflict (race condition) , RETRY !
+						if errors.Is(err, service.ErrOptimisticLock) {
+							log.Printf("Error processing ticket request: %v , Retrying again", err)
+							time.Sleep(backoff(attempt))
+							continue
+						}
+
+						// Business or fatal error → ACK (don't retry)
 						d.Ack(false)
 						return
 					}
 
-					//tell rabbitMQ : DONE , dont resend the data "delete it"
+					// Retries exhausted
+					// TODO → send to DLQ
+					// publishToDLQ(payload)
+					log.Printf("Retries exhausted for request %s", payload.RequestID)
 					d.Ack(false)
+
 				default:
 					log.Printf("Unknown Event Type: %s", wrapper.Event)
 					d.Ack(false)
@@ -195,4 +215,8 @@ func StartConsumer(bookingService *service.BookingService) {
 	<-doneChan
 
 	log.Println("Consumer exited cleanly")
+}
+
+func backoff(attempt int) time.Duration {
+	return time.Duration(attempt*attempt) * 50 * time.Millisecond
 }

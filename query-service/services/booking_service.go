@@ -39,7 +39,7 @@ func (s *BookingService) ProcessTicketRequest(req models.TicketRequest) error {
 	// 1 - Hard Transaction postgres (ACID)
 	booking, err := s.executePurchase(ctx, req)
 	if err != nil {
-		//transaction failed (sold out , DB error)
+		//transaction failed (sold out , DB error , racce condition)
 		return err
 	}
 
@@ -86,7 +86,7 @@ func (s *BookingService) executePurchase(ctx context.Context, req models.TicketR
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			log.Printf("Inventory not found: Match %d / %s", req.MatchID, req.Category)
-			return nil, fmt.Errorf("inventory not found")
+			return nil, ErrInventoryNotFound
 		}
 		return nil, fmt.Errorf("database read error: %v", err)
 	}
@@ -97,7 +97,8 @@ func (s *BookingService) executePurchase(ctx context.Context, req models.TicketR
 		metrics.SoldOutEvents.Inc()
 		//record SOLDOUT "Booking"
 		recordFailed := `INSERT INTO bookings (booking_id, user_id, match_id, category, quantity, status, created_at) 
-                         VALUES ($1, $2, $3, $4, $5, $6, $7)`
+                         VALUES ($1, $2, $3, $4, $5, $6, $7)
+						 ON CONFLICT (booking_id) DO NOTHING;`
 
 		_, err = tx.Exec(ctx, recordFailed, req.RequestID, req.UserID, req.MatchID, req.Category, req.Quantity, "SOLD_OUT", time.Now())
 		if err != nil {
@@ -132,12 +133,14 @@ func (s *BookingService) executePurchase(ctx context.Context, req models.TicketR
 	if cmdTag.RowsAffected() == 0 {
 		// The version changed, so our update was ignored.(someone else bought the ticket)
 		log.Printf("RACE CONDITION DETECTED (Version Mismatch): Match %d / %s", req.MatchID, req.Category)
-		return nil, fmt.Errorf("race condition detected") //returnin error to rabbitMQ to retry
+		metrics.RaceConditionEvents.Inc()
+		return nil, ErrOptimisticLock //returnin error to rabbitMQ to retry
 	}
 
 	//Insert Booking
 	queryBook := `INSERT INTO bookings (booking_id, user_id, match_id, category, quantity, status, created_at) 
-                  VALUES ($1, $2, $3, $4, $5, $6, $7)`
+                  VALUES ($1, $2, $3, $4, $5, $6, $7)
+				  ON CONFLICT (booking_id) DO NOTHING;`
 
 	_, err = tx.Exec(ctx, queryBook, req.RequestID, req.UserID, req.MatchID, req.Category, req.Quantity, "CONFIRMED", time.Now())
 	if err != nil {
