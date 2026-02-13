@@ -2,7 +2,6 @@ package events
 
 import (
 	"encoding/json"
-	"errors"
 	"log"
 	"os"
 	"os/signal"
@@ -88,7 +87,7 @@ func StartConsumer(bookingService *service.BookingService) {
 		false, //delete when unused
 		false, //exclusive
 		false, //no-wait
-		nil,   //args
+		nil,   //args^^^
 	)
 	if err != nil {
 		log.Fatalf("Failed to declare queue: %v", err)
@@ -166,28 +165,19 @@ func StartConsumer(bookingService *service.BookingService) {
 					for attempt := 0; attempt <= maxRetries; attempt++ {
 						err = bookingService.ProcessTicketRequest(payload)
 
-						// BOOKING CONFIRMED OR SOLDOUT , NO RETIES
 						if err == nil {
+							// Success or Sold Out (handled in service)
 							d.Ack(false)
 							return
 						}
 
-						//version conflict (race condition) , RETRY !
-						if errors.Is(err, service.ErrOptimisticLock) {
-							log.Printf("Error processing ticket request: %v , Retrying again", err)
-							time.Sleep(backoff(attempt))
-							continue
-						}
-
-						// Business or fatal error → ACK (don't retry)
-						d.Ack(false)
-						return
+						// If err != nil, it's a system failure (Redis/DB). Retry!
+						log.Printf("System Error processing request %s: %v. Retrying (%d/%d)...", payload.RequestID, err, attempt+1, maxRetries)
+						time.Sleep(backoff(attempt))
 					}
 
 					// Retries exhausted
-					// TODO → send to DLQ
-					// publishToDLQ(payload)
-					log.Printf("Retries exhausted for request %s", payload.RequestID)
+					log.Printf("Retries exhausted for request %s. Dropping message.", payload.RequestID)
 					d.Ack(false)
 
 				default:

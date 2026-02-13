@@ -32,7 +32,7 @@ func (a *AvailabilityCheck) GetAvailability(req models.Inventory) (int, error) {
 	defer cancel()
 
 	// Redis key
-	redisKey := fmt.Sprintf("match:%d:category:%s", req.MatchID, req.Category)
+	redisKey := fmt.Sprintf("availability:%d:category:%s", req.MatchID, req.Category)
 
 	// Try Redis cache
 	val, err := a.Redis.Get(ctx, redisKey).Result()
@@ -43,6 +43,9 @@ func (a *AvailabilityCheck) GetAvailability(req models.Inventory) (int, error) {
 	if err != redis.Nil {
 		return 0, err
 	}
+
+	//
+	// TODO : cache miss -> MongoDB Fallback , instead if postgress Fallback !
 
 	// Cache miss → Postgres Fallback
 	var total, sold int

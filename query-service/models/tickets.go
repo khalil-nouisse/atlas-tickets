@@ -35,7 +35,6 @@ type Inventory struct {
 	Price       float64   `bson:"price" json:"price"`
 	TotalSeats  int       `bson:"total_seats" json:"total_seats"`
 	SoldSeats   int       `bson:"sold_seats" json:"sold_seats"`
-	Version     int       `bson:"version" json:"version"`
 	CreatedAt   time.Time `bson:"created_at" json:"created_at"`
 }
 

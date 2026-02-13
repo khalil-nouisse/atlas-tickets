@@ -11,7 +11,6 @@ import (
 
 	"github.com/go-redis/redis/v8"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.mongodb.org/mongo-driver/mongo"
 )
@@ -31,32 +30,91 @@ func NewBookingService(pg *pgxpool.Pool, r *redis.Client, m *mongo.Collection) *
 	}
 }
 
-// The Public API for Booking
+// Redis First: The Scalable Gatekeeper
 func (s *BookingService) ProcessTicketRequest(req models.TicketRequest) error {
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// 1 - Hard Transaction postgres (ACID)
+	// 1. Ensure Redis has the inventory (Lazy Load)
+	redisKey := fmt.Sprintf("ticket_inventory:%d:%s", req.MatchID, req.Category)
+	if s.Redis.Exists(ctx, redisKey).Val() == 0 {
+		if err := s.initializeRedisInventory(ctx, req.MatchID, req.Category, redisKey); err != nil {
+			return err
+		}
+	}
+
+	// 2. Atomic Decrement (The "Token Bucket")
+	// Lua Script: Check if available > 0, then DECR. Else return -1.
+	script := `
+		local available = tonumber(redis.call("GET", KEYS[1]) or "0")
+		local qty = tonumber(ARGV[1])
+
+		if qty <= 0 then
+			return -2
+		end
+
+		if available >= qty then
+			return redis.call("DECRBY", KEYS[1], qty)
+		else
+			return -1
+		end
+	`
+	val, err := s.Redis.Eval(
+		ctx,
+		script,
+		[]string{redisKey},
+		req.Quantity,
+	).Result()
+
+	if err != nil {
+		log.Printf("Redis Eval Failed: %v", err)
+		return err // Retry in consumer
+	}
+
+	//redis query result
+	result := val.(int64)
+
+	if result == -1 {
+		log.Printf("SOLD OUT (Redis): Match %d", req.MatchID)
+		metrics.SoldOutEvents.Inc()
+		return nil // Stop processing (Ack message)
+	}
+	if result == -2 {
+		return fmt.Errorf("invalid ticket quantity")
+	}
+
+	//We have a token! Proceed to Postgres
 	booking, err := s.executePurchase(ctx, req)
 	if err != nil {
-		//transaction failed (sold out , DB error , racce condition)
-		return err
+		// COMPENSATION: We took a token but failed to write to DB. Give it back!
+		log.Printf("DB Error: %v. Rolling back Redis token...", err)
+		s.Redis.IncrBy(ctx, redisKey, int64(req.Quantity))
+		return err // Retry in consumer
 	}
 
-	// We do NOT update Redis or Mongo for failed bookings.
-	if booking.Status == "SOLD_OUT" {
-		log.Printf("Request %s was SOLD OUT. Skipping CQRS updates.", req.RequestID)
-		return nil // Return nil so RabbitMQ knows we handled it (don't retry)
-	}
-
-	// CQRS Softe Update (Redis , Mongo)
+	//CQRS Updates
 	err = s.updateReadModels(ctx, req, booking)
 	if err != nil {
-		log.Printf("Soft Update Failed : %v", err)
+		log.Printf("Soft Update Failed: %v", err)
 	}
 
 	return nil
+}
 
+// Helper to load inventory from Postgres to Redis if missing
+func (s *BookingService) initializeRedisInventory(ctx context.Context, matchID int, category string, key string) error {
+	var total, sold int
+	err := s.Postgres.QueryRow(ctx, "SELECT total_seats, sold_seats FROM ticket_inventory WHERE match_id=$1 AND category=$2", matchID, category).Scan(&total, &sold)
+	if err != nil {
+		log.Printf("Failed to load inventory for Redis init: %v", err)
+		return err
+	}
+	available := total - sold
+	// Set NX (Only if not exists, to avoid race conditions resetting it)
+	s.Redis.SetNX(ctx, key, available, 0)
+	log.Printf("Initialized Redis Inventory for %s: %d seats", key, available)
+	return nil
 }
 
 // The Private Helper for Postgres (The ACID Logic)
@@ -66,75 +124,14 @@ func (s *BookingService) executePurchase(ctx context.Context, req models.TicketR
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %v", err)
 	}
-
-	//rollback automatically if we retrn error before commit
 	defer tx.Rollback(ctx)
 
-	//check inventory
-	var inventory models.Inventory
-	queryCheck := `SELECT inventory_id,total_seats,sold_seats,version  
-				   FROM  ticket_inventory 
-				   WHERE match_id=$1 AND category=$2`
-
-	//.Scan : 1. executes the SQL query , 2. Fetches the first row , 3. Copies each column into the given Go variables in order
-	err = tx.QueryRow(ctx, queryCheck, req.MatchID, req.Category).Scan(
-		&inventory.InventoryID,
-		&inventory.TotalSeats,
-		&inventory.SoldSeats,
-		&inventory.Version,
-	)
+	// Update Inventory (Just for record keeping, Redis is the guard)
+	// We increment sold_seats just to keep Postgres consistent eventually
+	queryUpdate := `UPDATE ticket_inventory SET sold_seats=sold_seats+$1 WHERE match_id=$2 AND category=$3`
+	_, err = tx.Exec(ctx, queryUpdate, req.Quantity, req.MatchID, req.Category)
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			log.Printf("Inventory not found: Match %d / %s", req.MatchID, req.Category)
-			return nil, ErrInventoryNotFound
-		}
-		return nil, fmt.Errorf("database read error: %v", err)
-	}
-
-	//Quantity check
-	if req.Quantity > inventory.TotalSeats-inventory.SoldSeats {
-		log.Printf("SOLD OUT: Match %d (Req: %d, Left: %d)", req.MatchID, req.Quantity, inventory.TotalSeats-inventory.SoldSeats)
-		metrics.SoldOutEvents.Inc()
-		//record SOLDOUT "Booking"
-		recordFailed := `INSERT INTO bookings (booking_id, user_id, match_id, category, quantity, status, created_at) 
-                         VALUES ($1, $2, $3, $4, $5, $6, $7)
-						 ON CONFLICT (booking_id) DO NOTHING;`
-
-		_, err = tx.Exec(ctx, recordFailed, req.RequestID, req.UserID, req.MatchID, req.Category, req.Quantity, "SOLD_OUT", time.Now())
-		if err != nil {
-			return nil, fmt.Errorf("database write error: %v", err)
-		}
-
-		//commit the failed soldout booking
-		tx.Commit(ctx)
-		return &models.Booking{
-			BookingID: req.RequestID,
-			UserID:    req.UserID,
-			MatchID:   req.MatchID,
-			Category:  req.Category,
-			Quantity:  req.Quantity,
-			Status:    "SOLD_OUT",
-			CreatedAt: time.Now(),
-		}, nil
-	}
-
-	//Update Inventory (optimistic update)
-	queryUpdate := `UPDATE ticket_inventory 
-					SET sold_seats=sold_seats+$1 , version=version+1
-					WHERE inventory_id=$2 AND version=$3`
-
-	cmdTag, err := tx.Exec(ctx, queryUpdate, req.Quantity, inventory.InventoryID, inventory.Version)
-	if err != nil {
-		return nil, fmt.Errorf("update failed: %v", err)
-	}
-
-	//Detect Race Condition
-	//TODO : Upgrade later to " Redis Atomic Counters) "
-	if cmdTag.RowsAffected() == 0 {
-		// The version changed, so our update was ignored.(someone else bought the ticket)
-		log.Printf("RACE CONDITION DETECTED (Version Mismatch): Match %d / %s", req.MatchID, req.Category)
-		metrics.RaceConditionEvents.Inc()
-		return nil, ErrOptimisticLock //returnin error to rabbitMQ to retry
+		return nil, fmt.Errorf("update inventory failed: %v", err)
 	}
 
 	//Insert Booking
@@ -153,10 +150,10 @@ func (s *BookingService) executePurchase(ctx context.Context, req models.TicketR
 		return nil, fmt.Errorf("commit failed: %v", err)
 	}
 
-	log.Printf("Postgres Transaction Committed for Request %s", req.RequestID)
-	log.Printf("Booked %d tickets for Match %d - Category %s", req.Quantity, req.MatchID, req.Category)
+	log.Printf("Booked %d tickets for Match %d", req.Quantity, req.MatchID)
 	metrics.ConfirmedBookings.Inc()
 
+	// Return the booking object
 	return &models.Booking{
 		BookingID: req.RequestID,
 		UserID:    req.UserID,
@@ -172,18 +169,26 @@ func (s *BookingService) updateReadModels(ctx context.Context, req models.Ticket
 
 	// Update Redis Cache (Safe Decrement)
 	// Lua script: Check if key exists. If yes, DECRBY. If no, do nothing (Read-Through will fix it next time).
-	redisKey := fmt.Sprintf("match:%d:category:%s", req.MatchID, req.Category)
-	script := `
-		if redis.call("EXISTS", KEYS[1]) == 1 then
-			return redis.call("DECRBY", KEYS[1], ARGV[1])
-		else
-			return 0
-		end
-	`
-	err := s.Redis.Eval(ctx, script, []string{redisKey}, req.Quantity).Err()
-	if err != nil {
-		log.Printf("Redis Update Failed: %v", err)
+	redisKey := fmt.Sprintf("availability:%d:%s", req.MatchID, req.Category)
+
+	available, err := s.Redis.Get(ctx,
+		fmt.Sprintf("ticket_inventory:%d:%s", req.MatchID, req.Category),
+	).Int()
+	if err == nil {
+		s.Redis.Set(ctx, redisKey, available, 10*time.Second)
 	}
+
+	// script := `
+	// 	if redis.call("EXISTS", KEYS[1]) == 1 then
+	// 		return redis.call("DECRBY", KEYS[1], ARGV[1])
+	// 	else
+	// 		return 0
+	// 	end
+	// `
+	// err := s.Redis.Eval(ctx, script, []string{redisKey}, req.Quantity).Err()
+	// if err != nil {
+	// 	log.Printf("Redis Update Failed: %v", err)
+	// }
 
 	_, err = s.Mongo.InsertOne(ctx, booking)
 	if err != nil {
