@@ -24,7 +24,6 @@ CREATE TABLE IF NOT EXISTS ticket_inventory (
     price DECIMAL(10, 2) NOT NULL,
     total_seats INT NOT NULL,
     sold_seats INT DEFAULT 0,
-    version INT DEFAULT 1, -- Optimistic Locking for Concurrency
     
     UNIQUE(match_id, category),
     CONSTRAINT check_capacity CHECK (sold_seats <= total_seats)

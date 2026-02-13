@@ -105,16 +105,40 @@ func (s *BookingService) ProcessTicketRequest(req models.TicketRequest) error {
 // Helper to load inventory from Postgres to Redis if missing
 func (s *BookingService) initializeRedisInventory(ctx context.Context, matchID int, category string, key string) error {
 	var total, sold int
-	err := s.Postgres.QueryRow(ctx, "SELECT total_seats, sold_seats FROM ticket_inventory WHERE match_id=$1 AND category=$2", matchID, category).Scan(&total, &sold)
+	var matchDate time.Time
+	err := s.Postgres.QueryRow(ctx, "SELECT ti.total_seats, ti.sold_seats, m.match_date FROM ticket_inventory ti JOIN matches m ON ti.match_id = m.match_id WHERE match_id=$1 AND category=$2", matchID, category).Scan(&total, &sold, &matchDate)
 	if err != nil {
 		log.Printf("Failed to load inventory for Redis init: %v", err)
 		return err
 	}
 	available := total - sold
+
+	ttl := calculateTTL(matchDate)
+
 	// Set NX (Only if not exists, to avoid race conditions resetting it)
-	s.Redis.SetNX(ctx, key, available, 0)
+	err = s.Redis.SetNX(ctx, key, available, ttl).Err()
+	if err != nil {
+		log.Printf("Failed to set Redis inventory: %v", err)
+		return err
+	}
+
 	log.Printf("Initialized Redis Inventory for %s: %d seats", key, available)
 	return nil
+}
+
+func calculateTTL(matchDate time.Time) time.Duration {
+	now := time.Now()
+	timeUntilMatch := matchDate.Sub(now)
+	// Event Soon - keep data fresh
+	if timeUntilMatch < 24*time.Hour {
+		return 5 * time.Minute
+	}
+	//event is 1-7 days away
+	if timeUntilMatch < 7*24*time.Hour {
+		return 1 * time.Hour
+	}
+	//event is far in the future
+	return 24 * time.Hour
 }
 
 // The Private Helper for Postgres (The ACID Logic)

@@ -105,6 +105,6 @@ kubectl exec -it -n atlastickets deployment/redis -- redis-cli
 **Redis Commands:**
 ```bash
 KEYS *
-GET match:1:category:VIP
+GET ticket_inventory:1:category:VIP
 exit
 ```
