@@ -11,7 +11,7 @@ import (
 const (
 	totalRequests = 50
 	url           = "http://api.localhost/api/tickets"
-	payload       = `{"match_id": 7, "category": "VIP", "quantity": 1, "user_id": 1}`
+	payload       = `{"match_id": 1, "category": "VIP", "quantity": 1, "user_id": 1}`
 )
 
 func main() {

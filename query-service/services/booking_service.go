@@ -106,7 +106,7 @@ func (s *BookingService) ProcessTicketRequest(req models.TicketRequest) error {
 func (s *BookingService) initializeRedisInventory(ctx context.Context, matchID int, category string, key string) error {
 	var total, sold int
 	var matchDate time.Time
-	err := s.Postgres.QueryRow(ctx, "SELECT ti.total_seats, ti.sold_seats, m.match_date FROM ticket_inventory ti JOIN matches m ON ti.match_id = m.match_id WHERE match_id=$1 AND category=$2", matchID, category).Scan(&total, &sold, &matchDate)
+	err := s.Postgres.QueryRow(ctx, "SELECT ti.total_seats, ti.sold_seats, m.match_date FROM ticket_inventory ti JOIN matches m ON ti.match_id = m.match_id WHERE ti.match_id=$1 AND category=$2", matchID, category).Scan(&total, &sold, &matchDate)
 	if err != nil {
 		log.Printf("Failed to load inventory for Redis init: %v", err)
 		return err
@@ -191,30 +191,7 @@ func (s *BookingService) executePurchase(ctx context.Context, req models.TicketR
 
 func (s *BookingService) updateReadModels(ctx context.Context, req models.TicketRequest, booking *models.Booking) error {
 
-	// Update Redis Cache (Safe Decrement)
-	// Lua script: Check if key exists. If yes, DECRBY. If no, do nothing (Read-Through will fix it next time).
-	redisKey := fmt.Sprintf("availability:%d:%s", req.MatchID, req.Category)
-
-	available, err := s.Redis.Get(ctx,
-		fmt.Sprintf("ticket_inventory:%d:%s", req.MatchID, req.Category),
-	).Int()
-	if err == nil {
-		s.Redis.Set(ctx, redisKey, available, 10*time.Second)
-	}
-
-	// script := `
-	// 	if redis.call("EXISTS", KEYS[1]) == 1 then
-	// 		return redis.call("DECRBY", KEYS[1], ARGV[1])
-	// 	else
-	// 		return 0
-	// 	end
-	// `
-	// err := s.Redis.Eval(ctx, script, []string{redisKey}, req.Quantity).Err()
-	// if err != nil {
-	// 	log.Printf("Redis Update Failed: %v", err)
-	// }
-
-	_, err = s.Mongo.InsertOne(ctx, booking)
+	_, err := s.Mongo.InsertOne(ctx, booking)
 	if err != nil {
 		log.Printf("Mongo Update Failed (User won't see ticket yet): %v", err)
 	}

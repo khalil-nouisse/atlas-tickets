@@ -21,7 +21,7 @@ var (
 	// Track race condition events
 	RaceConditionEvents = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "atlastickets_bookings_race_condition_total",
-		Help: "The total number of bookings failed due to race conditions (optimistic locking)",
+		Help: "The total number of bookings failed due to race conditions (concurrency conflicts)",
 	})
 
 	// Track active workers in the pool
