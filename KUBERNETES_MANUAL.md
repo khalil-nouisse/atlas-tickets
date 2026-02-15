@@ -30,6 +30,89 @@ We have successfully migrated the **Atlas Tickets** microservices architecture t
 
 ---
 
+## 🚀 Quick Start (Deployment Guide)
+
+Follow these steps to deploy the entire stack on a local Kubernetes cluster using KIND.
+
+### 1. Prerequisites
+- **Docker** desktop installed and running.
+- **Kind** (Kubernetes in Docker) installed: `brew install kind`
+- **Kubectl** installed: `brew install kubectl`
+
+### 2. Create the Cluster
+Use the provided script to create a cluster with NGINX-ready configuration.
+```bash
+# From the root directory
+./scripts/create-cluster.sh
+```
+
+### 3. Install NGINX Ingress Controller
+We need an Ingress Controller to route traffic from `localhost` to our services.
+```bash
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+
+# Wait for the controller to be ready (can take a minute)
+kubectl wait --namespace ingress-nginx \
+  --for=condition=ready pod \
+  --selector=app.kubernetes.io/component=controller \
+  --timeout=90s
+```
+
+### 4. Deploy the Application
+Apply the manifests in the following order to respect dependencies.
+
+#### Step A: Base Configurations (Namespace, Secrets, ConfigMaps)
+```bash
+kubectl apply -f k8s/base/namespace.yaml
+kubectl apply -f k8s/base/secrets.yaml
+kubectl apply -f k8s/base/configmap.yaml
+```
+
+#### Step B: Infrastructure (Databases & Broker)
+```bash
+kubectl apply -f k8s/infrastructure/postgres
+kubectl apply -f k8s/infrastructure/mongodb
+kubectl apply -f k8s/infrastructure/redis
+kubectl apply -f k8s/infrastructure/rabbitmq
+```
+*Wait for pods to be ready:* `kubectl get pods -n atlastickets`
+
+#### Step C: Database Initialization (Schema & Seeds)
+This job waits for Postgres to be ready, then populates it with tables and data.
+```bash
+kubectl apply -f k8s/jobs/db-init-job.yaml
+```
+*Check logs:* `kubectl logs -n atlastickets -l job-name=db-init-job`
+
+#### Step D: Microservices (Apps)
+```bash
+kubectl apply -f k8s/services/command-service
+kubectl apply -f k8s/services/query-service
+```
+
+#### Step E: Ingress Rules (Routing)
+```bash
+kubectl apply -f k8s/infrastructure/ingress/command-ingress.yaml
+kubectl apply -f k8s/infrastructure/ingress/query-ingress.yaml
+```
+
+### 5. Verification
+Check if all pods are running:
+```bash
+kubectl get pods -n atlastickets
+```
+You should see:
+- `command-service-...` (Running)
+- `query-service-...` (Running)
+- `postgres-0` (Running)
+- `mongo-0` (Running)
+- `redis-...` (Running)
+- `rabbitmq-...` (Running)
+- `db-init-job-...` (Completed)
+```
+
+---
+
 ##  User Manual: How to Use the App
 
 ### 1. Prerequisites
@@ -87,8 +170,8 @@ SELECT * FROM ticket_inventory;
 
 #### MongoDB (The Read Model)
 Check the `bookings` collection to see the CQRS projection.
-```bash
-kubectl exec -it -n atlastickets statefulset/mongo -- mongosh tickets_read_db
+    ```bash
+    kubectl exec -it -n atlastickets statefulset/mongo -- mongosh tickets_read_db
 ```
 **Mongo Commands:**
 ```javascript

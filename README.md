@@ -1,144 +1,118 @@
-# 🎫 AtlasTickets: High-Concurrency Event Ticketing System
+# AtlasTickets: Distributed Event Ticketing System
 
 ![Status](https://img.shields.io/badge/Status-Active-success)
-![Docker](https://img.shields.io/badge/Docker-Enabled-blue)
-![Architecture](https://img.shields.io/badge/Architecture-CQRS%20%2F%20Event--Driven-orange)
+![Architecture](https://img.shields.io/badge/Architecture-Event--Driven%20%2F%20Redis%20Atomic-blue)
 
-**AtlasTickets** is a distributed microservices system designed to handle high-demand ticket sales (e.g., AFCON , concerts) without overselling or crashing. It implements the **CQRS (Command Query Responsibility Segregation)** pattern and uses an **Event-Driven Architecture** to ensure data consistency across multiple databases.
+AtlasTickets is a high-performance distributed microservices system designed to handle high-demand ticket sales without race conditions or overselling. It implements the CQRS (Command Query Responsibility Segregation) pattern and uses Redis for atomic inventory management, ensuring data consistency across multiple data stores.
 
-The core goal of this project was to solve the **"Double Booking" Race Condition** problem using Optimistic Locking and a Semaphore-based Worker Pool in Go.
+The core objective of this project is to solve the "Double Booking" problem in high-concurrency environments (e.g., ticket scalping bots, flash sales) by utilizing Redis Lua scripting for atomic operations, replacing traditional database locking mechanisms.
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
-The system follows a strict **CQRS** pattern:
+The system follows a strict CQRS and Event-Driven Architecture:
 
 ![Architecture](images/architecture.png)
 
-* **Command Side (Write):** A **Node.js** service accepts HTTP requests and publishes events to **RabbitMQ**. It focuses on high throughput ingestion.
-* **Query Side (Read/Process):** A **Go (Golang)** service consumes events, processes business logic, and enforces strict ACID transactions using **PostgreSQL**.
-* **Polyglot Persistence:**
-    * **PostgreSQL:** The Source of Truth (Write Model). Uses **Optimistic Locking** to prevent race conditions.
-    * **MongoDB:** The Read Model (Projections) for fast querying.
-    * **Redis:** Caching layer for real-time inventory counters.
+* **Command Side (Write):** A Node.js service accepts HTTP requests, validates basic input, and publishes booking events to RabbitMQ. It is designed for high-throughput ingestion.
+* **Query Side (Process):** A Go (Golang) service consumes events, manages inventory via Redis, and persists data to PostgreSQL and MongoDB.
+
+### Data Persistence Strategy
+* **Redis:** The primary source of truth for real-time inventory. Uses atomic Lua scripts to prevent race conditions during ticket reservation.
+* **PostgreSQL:** The persistent record of truth for Users, Matches, and finalized Bookings. It serves as the durable backup for Redis.
+* **MongoDB:** The Read Model (Query Side). Optimized for fast read operations by the frontend, containing denormalized booking data.
 
 ---
 
-## 🛠 Tech Stack
+## Tech Stack
 
 * **Services:** Node.js (Express), Go (Golang)
 * **Message Broker:** RabbitMQ
-* **Databases:** PostgreSQL 15, MongoDB, Redis
-* **Infrastructure:** Docker, Docker Compose
-* **Testing:** Custom Go Load Tester (Simulating concurrent attacks)
+* **Databases:** PostgreSQL 15, MongoDB, Redis 7
+* **Infrastructure:** Kubernetes (Kind), Docker
+* **Testing:** Custom Go Stress Tester
 
 ---
 
-## ⚡ Key Features
+## Key Features
 
-### 1. Concurrency Control (The "Double Booking" Fix)
-Solved the classic race condition where 2 users buy the last seat simultaneously.
-* **Solution:** Implemented **Optimistic Locking** using a `version` column in Postgres.
-* **Logic:** `UPDATE inventory SET sold = sold + 1, version = version + 1 WHERE id = $1 AND version = $2`
-* **Result:** If 100 users try to buy the last 1 seat, exactly 1 succeeds and 99 fail gracefully.
+### 1. Atomic Inventory Management
+To handle thousands of concurrent requests, the system moves away from database-level locking (Optimistic/Pessimistic) and utilizes Redis atomic counters.
+* **Mechanism:** A Lua script checks availability and decrements the counter in a single atomic operation.
+* **Benefit:** Eliminates database contention and row locking, significantly increasing throughput.
+* **Compensation:** If a downstream database error occurs after a successful Redis decrement, a compensation transaction automatically reverts the Redis counter.
 
-### 2. High-Performance Worker Pool
-To utilize Go's concurrency without crashing the database, I implemented a **Semaphore-based Worker Pool**.
-* **Pattern:** Bounded Parallelism.
-* **Throughput:** Processes **10 concurrent ticket requests** in parallel.
-* **Safety:** Uses `sync.WaitGroup` for graceful shutdowns to prevent data corruption during restarts.
+### 2. Event-Driven Concurrency
+* **Asynchronous Processing:** Booking requests are queued in RabbitMQ, decoupling ingestion from processing.
+* **Worker Pool:** The Go service implements a bounded semaphore-based worker pool to process events in parallel without overwhelming the database.
 
-### 3. Event-Driven Reliability
-* **QoS (Quality of Service):** RabbitMQ prefetch limits ensure the Go service is never overwhelmed by traffic spikes.
-* **Manual Acks:** Messages are only removed from the queue *after* the database transaction successfully commits.
+### 3. Data Consistency
+* **Lazy Loading:** Redis inventory is lazily initialized from PostgreSQL if a cache miss occurs.
+* **Self-Healing:** The system includes mechanisms to resync Redis from the persistent store in case of data divergence.
 
 ---
 
-## 🧪 Performance & Load Testing
+## Performance & Load Testing
 
-I wrote a custom **Stress Test Script in Go** to validate the architecture.
+A custom stress testing script was developed to validate the architecture under load.
 
 **Scenario:**
-* **Supply:** 50 VIP Seats.
-* **Demand:** 200 Concurrent Users firing requests instantly.
+* **Supply:** 50 VIP Seats for Match 1.
+* **Demand:** 50 concurrent requests.
 
 **Results:**
 | Metric | Outcome |
 | :--- | :--- |
-| **Requests Sent** | 200 |
-| **Tickets Sold** | **50** (Exactly) |
-| **Oversold** | **0** (Zero race conditions) |
-| **Rejected** | 150 (Correctly marked as SOLD_OUT) |
-| **Processing Time** | ~4.3s for 200 transactions |
+| **Requests Sent** | 50 |
+| **Tickets Sold** | 50 (Exactly) |
+| **Oversold** | 0 |
+| **Processing Time** | < 2s |
 
 ---
 
-## 🏃‍♂️ How to Run
+## How to Run
 
 ### Prerequisites
-* **Docker & Docker Compose** (Required)
-* **Go 1.22+** (Optional, to run load tests locally)
-* **Node.js 18+** (Optional, for local development)
+* Docker & Docker Compose
+* Kubernetes (Kind) - Optional for K8s deployment
+* Go 1.22+ (for local stress testing)
 
 ### 1. Start the Infrastructure
 ```bash
-# Clone the repo
-git clone https://github.com/yourusername/atlastickets.git
-cd atlastickets
-
-# Start all services (Postgres, Mongo, RabbitMQ, Node, Go)
 docker-compose up -d --build
 ```
 
 ### 2. Initialize the Database
-The **Command Service** (Node.js) automatically initializes the database schema and seed data on startup. 
-Use `docker ps` to verify all containers are healthy.
+The system automatically initializes the database schema and seed data via a Kubernetes Job or the Node.js service startup script.
 
-### 3. Run the Stress Test (Simulate a Flash Sale)
-
-This script simulates 200 users trying to buy tickets simultaneously.
+### 3. Run the Stress Test
+This script simulates concurrent users trying to buy tickets simultaneously.
 
 ```bash
-# 1. Reset the database (optional, deletes old data)
-# Note: Seed data is managed by command-service/db.js, but you can manually reset if needed.
-
-# 2. Run the attack from the root directory
-go run query-service/test/stress.go
+# Run the stress test from the root directory
+go run stress.go
 ```
 
 ### 4. Verify Results
-
-Check the database to prove no tickets were oversold.
+Check the PostgreSQL database to confirm no tickets were oversold.
 
 ```bash
-docker exec -it atlas-postgres psql -U atlas -d atlastickets -c "SELECT sold_seats FROM ticket_inventory WHERE match_id=1;"
+kubectl exec -it statefulset/postgres -n atlastickets -- psql -U atlas -d atlastickets -c "SELECT sold_seats FROM ticket_inventory WHERE match_id=1;"
 ```
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```
 .
 ├── command-service/      # Node.js API (Producer)
-│   ├── controllers/      # Ticket purchase logic
-│   ├── routes/           # API Routes
-│   ├── services/         # RabbitMQ Producer
-│   ├── db.js             # DB Connection & Retry Logic
-│   └── app.js            # Entry Point & Auto-DB Init
 ├── query-service/        # Go Worker (Consumer)
-│   ├── events/           # RabbitMQ Consumer with Worker Pool
-│   ├── database/         # Postgres & Mongo Connections
-│   ├── services/         # Business Logic & Optimistic Locking
-│   ├── models/           # Go Structs
-│   └── test/             # Stress Testing Scripts (stress.go)
-├── docker/               # Infrastructure Config
-│   └── postgres/         # SQL Scripts (Schema, Seeds, Indexes)
-└── docker-compose.yml    # Container Orchestration
+│   ├── events/           # RabbitMQ Consumer
+│   ├── database/         # Postgres, Mongo, Redis Adapters
+│   ├── services/         # Business Logic & Redis Lua Scripts
+│   └── models/           # Go Structs
+├── k8s/                  # Kubernetes Manifests
+└── stress.go             # Stress Testing Script
 ```
-
-## 🔮 Future Improvements
-- [ ] Deploy to Kubernetes (K8s) with Helm Charts.
-- [ ] Add Prometheus & Grafana for real-time monitoring of the worker pool.
-- [ ] Implement Dead Letter Queues (DLQ) for failed transactions.
