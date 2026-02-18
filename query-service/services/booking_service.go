@@ -45,7 +45,7 @@ func (s *BookingService) ProcessTicketRequest(req models.TicketRequest) error {
 	}
 
 	// 2. Atomic Decrement (The "Token Bucket")
-	// Lua Script: Check if available > 0, then DECR. Else return -1.
+	// Lua Script: Check if available >= qty , then DECR by qty. Else return -1.
 	script := `
 		local available = tonumber(redis.call("GET", KEYS[1]) or "0")
 		local qty = tonumber(ARGV[1])
@@ -105,40 +105,16 @@ func (s *BookingService) ProcessTicketRequest(req models.TicketRequest) error {
 // Helper to load inventory from Postgres to Redis if missing
 func (s *BookingService) initializeRedisInventory(ctx context.Context, matchID int, category string, key string) error {
 	var total, sold int
-	var matchDate time.Time
-	err := s.Postgres.QueryRow(ctx, "SELECT ti.total_seats, ti.sold_seats, m.match_date FROM ticket_inventory ti JOIN matches m ON ti.match_id = m.match_id WHERE ti.match_id=$1 AND category=$2", matchID, category).Scan(&total, &sold, &matchDate)
+	err := s.Postgres.QueryRow(ctx, "SELECT total_seats, sold_seats FROM ticket_inventory WHERE match_id=$1 AND category=$2", matchID, category).Scan(&total, &sold)
 	if err != nil {
 		log.Printf("Failed to load inventory for Redis init: %v", err)
 		return err
 	}
 	available := total - sold
-
-	ttl := calculateTTL(matchDate)
-
 	// Set NX (Only if not exists, to avoid race conditions resetting it)
-	err = s.Redis.SetNX(ctx, key, available, ttl).Err()
-	if err != nil {
-		log.Printf("Failed to set Redis inventory: %v", err)
-		return err
-	}
-
+	s.Redis.SetNX(ctx, key, available, 0)
 	log.Printf("Initialized Redis Inventory for %s: %d seats", key, available)
 	return nil
-}
-
-func calculateTTL(matchDate time.Time) time.Duration {
-	now := time.Now()
-	timeUntilMatch := matchDate.Sub(now)
-	// Event Soon - keep data fresh
-	if timeUntilMatch < 24*time.Hour {
-		return 5 * time.Minute
-	}
-	//event is 1-7 days away
-	if timeUntilMatch < 7*24*time.Hour {
-		return 1 * time.Hour
-	}
-	//event is far in the future
-	return 24 * time.Hour
 }
 
 // The Private Helper for Postgres (The ACID Logic)
@@ -191,7 +167,30 @@ func (s *BookingService) executePurchase(ctx context.Context, req models.TicketR
 
 func (s *BookingService) updateReadModels(ctx context.Context, req models.TicketRequest, booking *models.Booking) error {
 
-	_, err := s.Mongo.InsertOne(ctx, booking)
+	// Update Redis Cache (Safe Decrement)
+	// Lua script: Check if key exists. If yes, DECRBY. If no, do nothing (Read-Through will fix it next time).
+	redisKey := fmt.Sprintf("availability:%d:%s", req.MatchID, req.Category)
+
+	available, err := s.Redis.Get(ctx,
+		fmt.Sprintf("ticket_inventory:%d:%s", req.MatchID, req.Category),
+	).Int()
+	if err == nil {
+		s.Redis.Set(ctx, redisKey, available, 10*time.Second)
+	}
+
+	// script := `
+	// 	if redis.call("EXISTS", KEYS[1]) == 1 then
+	// 		return redis.call("DECRBY", KEYS[1], ARGV[1])
+	// 	else
+	// 		return 0
+	// 	end
+	// `
+	// err := s.Redis.Eval(ctx, script, []string{redisKey}, req.Quantity).Err()
+	// if err != nil {
+	// 	log.Printf("Redis Update Failed: %v", err)
+	// }
+
+	_, err = s.Mongo.InsertOne(ctx, booking)
 	if err != nil {
 		log.Printf("Mongo Update Failed (User won't see ticket yet): %v", err)
 	}

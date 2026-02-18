@@ -41,8 +41,10 @@ func connectPostgres() (*pgxpool.Pool, error) {
 
 	// Performance Tuning: Set max connections
 	// This prevents the Go worker from overwhelming Postgres if traffic spikes.
-	config.MaxConns = 10
-	config.MinConns = 1
+	config.MaxConns = 50 // Max connections per pod
+	config.MinConns = 10 // Keep warm connections
+	config.MaxConnIdleTime = 30 * time.Minute
+	config.MaxConnLifetime = 1 * time.Hour
 
 	// 3. Establish the connection
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

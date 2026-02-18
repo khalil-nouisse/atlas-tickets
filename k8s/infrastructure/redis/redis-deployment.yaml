@@ -19,6 +19,13 @@ spec:
       containers:
       - name: redis
         image: redis:7-alpine
+        command: ["redis-server"]
+        args:
+          - "--appendonly yes"              # Enable AOF persistence
+          - "--appendfsync everysec"        # Sync to disk every second
+          - "--maxmemory 512mb"             # Memory limit (increased for stress test)
+          - "--maxmemory-policy allkeys-lru" # Evict least recently used if full
+          - "--save 60 1000"                # Also save snapshot every 60s if 1000 keys changed
         ports:
         - containerPort: 6379
           name: redis
@@ -28,13 +35,20 @@ spec:
             secretKeyRef:
               name: atlastickets-secrets
               key: REDIS_PASSWORD
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data  # Redis persistence directory
         resources:
           requests:
-            memory: "128Mi"
-            cpu: "100m"
+            memory: "256Mi"   # Increased from 128Mi
+            cpu: "200m"       # Increased from 100m
           limits:
-            memory: "256Mi"
-            cpu: "200m"
+            memory: "768Mi"   # Increased from 256Mi (for stress test)
+            cpu: "500m"       # Increased from 200m
+      volumes:
+      - name: redis-data
+        emptyDir: {}  # For kind (temporary storage, cleared on pod restart)
+        # In production, use PersistentVolumeClaim instead
 ---
 apiVersion: v1
 kind: Service
@@ -46,3 +60,4 @@ spec:
     app: redis
   ports:
   - port: 6379
+    targetPort: 6379

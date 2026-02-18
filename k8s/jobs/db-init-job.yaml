@@ -5,13 +5,13 @@ metadata:
   namespace: atlastickets
 data:
   01-schema.sql: |
-    -- A. Users Table
     -- Drop existing tables to ensure clean slate
     DROP TABLE IF EXISTS bookings CASCADE;
     DROP TABLE IF EXISTS ticket_inventory CASCADE;
     DROP TABLE IF EXISTS matches CASCADE;
     DROP TABLE IF EXISTS users CASCADE;
     
+    -- A. Users Table
     CREATE TABLE IF NOT EXISTS users (
         user_id SERIAL PRIMARY KEY,
         email VARCHAR(255) UNIQUE NOT NULL,
@@ -29,11 +29,11 @@ data:
         is_active BOOLEAN DEFAULT TRUE
     );
 
-    -- C. Inventory Table (Category Based + Optimistic Locking)
+    -- C. Inventory Table (Category Based)
     CREATE TABLE IF NOT EXISTS ticket_inventory (
         inventory_id SERIAL PRIMARY KEY,
         match_id INT REFERENCES matches(match_id),
-        category VARCHAR(20) NOT NULL, -- e.g., 'VIP', 'CAT1'
+        category VARCHAR(20) NOT NULL,
         price DECIMAL(10, 2) NOT NULL,
         total_seats INT NOT NULL,
         sold_seats INT DEFAULT 0,
@@ -44,74 +44,50 @@ data:
 
     -- D. Bookings Table (The Transaction Log)
     CREATE TABLE IF NOT EXISTS bookings (
-        booking_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        booking_id VARCHAR(255) PRIMARY KEY,
         user_id INT REFERENCES users(user_id),
         match_id INT REFERENCES matches(match_id),
         category VARCHAR(20) NOT NULL,
         quantity INT NOT NULL,
-        status VARCHAR(20) DEFAULT 'PENDING', -- 'PENDING', 'CONFIRMED', 'FAILED', 'SOLD_OUT'
+        status VARCHAR(20) DEFAULT 'PENDING',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
   02-seed-data.sql: |
-    -- 2. SEED DATA (Initial Mock Data)
-    -- Insert a test User (You)
-    DELETE FROM users WHERE email = 'demo@atlastickets.ma' AND user_id != 1;
-    INSERT INTO users (user_id, email, full_name) 
-    VALUES (1, 'demo@atlastickets.ma', 'DevOps Engineer')
-    ON CONFLICT (user_id) DO NOTHING;
+    -- 1. Generate 100k test users directly
+    -- We use a subquery to avoid any conflict with existing emails
+    INSERT INTO users (email, full_name)
+    SELECT 
+        'loadtest-' || gs || '@test.com',
+        'Load Test User ' || gs
+    FROM generate_series(1, 100000) AS gs
+    ON CONFLICT (email) DO NOTHING;
 
-    DELETE FROM users WHERE email = 'test@atlastickets.ma' AND user_id != 2;
-    INSERT INTO users (user_id, email, full_name) 
-    VALUES (2, 'test@atlastickets.ma', 'Test User')
-    ON CONFLICT (user_id) DO NOTHING;
-
-    DELETE FROM users WHERE email = 'vip@atlastickets.ma' AND user_id != 3;
-    INSERT INTO users (user_id, email, full_name) 
-    VALUES (3, 'vip@atlastickets.ma', 'VIP User')
-    ON CONFLICT (user_id) DO NOTHING;
-
-    -- Match 1 : Morocco vs South Africa
+    -- 2. Matches
     INSERT INTO matches (match_id, home_team, away_team, match_date, stadium) 
-    VALUES (1, 'Morocco', 'South Africa', '2026-01-30 20:00:00', 'Stade Adrar - Agadir')
+    VALUES 
+        (1, 'Morocco', 'South Africa', '2026-01-30 20:00:00', 'Stade Adrar - Agadir'),
+        (2, 'Algeria', 'Egypt', '2026-02-15 21:00:00', 'Stade Mustapha Tchaker - Blida'),
+        (3, 'Nigeria', 'Cameroon', '2026-02-20 21:00:00', 'Godswill Akpabio Stadium - Uyo')
     ON CONFLICT (match_id) DO NOTHING;
 
-
-    -- Match 2: Algeria vs Egypt
-    INSERT INTO matches (match_id, home_team, away_team, match_date, stadium)
-    VALUES (2, 'Algeria', 'Egypt', '2026-02-15 21:00:00', 'Stade Mustapha Tchaker - Blida')
-    ON CONFLICT (match_id) DO NOTHING;
-
-    -- Match 3: Nigeria vs Cameron 
-    INSERT INTO matches (match_id, home_team, away_team, match_date, stadium)
-    VALUES (3, 'Nigeria', 'Cameron', '2026-02-15 21:00:00', 'Stade Mustapha Tchaker - Blida')
-    ON CONFLICT (match_id) DO NOTHING;
-
-    -- Inventory for Match 1
+    -- 3. Inventory
     INSERT INTO ticket_inventory (match_id, category, price, total_seats, sold_seats) 
     VALUES 
-    (1, 'VIP', 2000.00, 50, 0),
-    (1, 'CAT1', 500.00, 100, 0)
-    ON CONFLICT (match_id, category) DO NOTHING;
-
-    -- Inventory for Match 2
-    INSERT INTO ticket_inventory (match_id, category, price, total_seats, sold_seats)
-    VALUES
-    (2, 'VIP', 3000.00, 20, 0),
-    (2, 'CAT1', 800.00, 150, 0)
-    ON CONFLICT (match_id, category) DO NOTHING;
-
-    -- Inventory for Match 3
-    INSERT INTO ticket_inventory (match_id, category, price, total_seats, sold_seats)
-    VALUES
-    (3, 'VIP', 3000.00, 1000, 0),
-    (3, 'CAT1', 800.00, 2000, 0)
+        (1, 'VIP', 2000.00, 50, 0),
+        (1, 'CAT1', 500.00, 100, 0),
+        (2, 'VIP', 3000.00, 20, 0),
+        (2, 'CAT1', 800.00, 150, 0),
+        (3, 'VIP', 3000.00, 5000, 0),
+        (3, 'CAT1', 800.00, 10000, 0)
     ON CONFLICT (match_id, category) DO NOTHING;
 
   03-indexes.sql: |
     -- Indexes for performance
     CREATE INDEX IF NOT EXISTS idx_inventory_match ON ticket_inventory(match_id);
     CREATE INDEX IF NOT EXISTS idx_bookings_user ON bookings(user_id);
+    CREATE INDEX IF NOT EXISTS idx_bookings_match ON bookings(match_id);
+    CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings(status);
 
 ---
 apiVersion: batch/v1
@@ -137,13 +113,19 @@ spec:
             echo "Running Schema Script..."
             psql -h postgres-service -U $POSTGRES_USER -d $POSTGRES_DB -f /scripts/01-schema.sql
             
-            echo "Running Seed Data Script..."
+            echo "Running Seed Data Script (this will take ~10 seconds for 100K users)..."
             psql -h postgres-service -U $POSTGRES_USER -d $POSTGRES_DB -f /scripts/02-seed-data.sql
             
             echo "Running Indexes Script..."
             psql -h postgres-service -U $POSTGRES_USER -d $POSTGRES_DB -f /scripts/03-indexes.sql
             
+            echo ""
             echo "Database Initialization Complete!"
+            echo "User count:"
+            psql -h postgres-service -U $POSTGRES_USER -d $POSTGRES_DB -c "SELECT COUNT(*) as total_users FROM users;"
+            echo ""
+            echo "Inventory:"
+            psql -h postgres-service -U $POSTGRES_USER -d $POSTGRES_DB -c "SELECT match_id, category, total_seats FROM ticket_inventory;"
         env:
         - name: POSTGRES_DB
           valueFrom:

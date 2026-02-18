@@ -1,5 +1,3 @@
-
-
 -- 2. SEED DATA (Initial Mock Data)
 -- Insert a test User (You)
 DELETE FROM users WHERE email = 'demo@atlastickets.ma' AND user_id != 1;

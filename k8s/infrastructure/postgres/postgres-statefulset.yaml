@@ -54,7 +54,8 @@ spec:
         - name: PGDATA
           #Moves actual DB files into a subdirectory
           value: /var/lib/postgresql/data/pgdata
-        
+        - name: POSTGRES_MAX_CONNECTIONS
+          value: "500"  # Default is 100, increase for stress test
         # Mount persistent storage
         volumeMounts:
         - name: postgres-storage

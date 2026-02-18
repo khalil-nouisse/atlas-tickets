@@ -8,7 +8,7 @@ metadata:
     app: atlastickets
     component: command-service
 spec:
-  replicas: 3  # Run 3 instances for high availability
+  replicas: 7  # Run 3 instances for high availability
   
   selector:
     matchLabels:
@@ -58,10 +58,10 @@ spec:
         # Resource limits
         resources:
           requests:
-            memory: "128Mi"
-            cpu: "100m"
-          limits:
             memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
             cpu: "500m"
         
         # Liveness probe - Kubernetes restarts pod if this fails

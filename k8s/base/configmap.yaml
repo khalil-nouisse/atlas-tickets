@@ -21,4 +21,4 @@ data:
   RABBITMQ_QUEUE_TICKET: "ticket_queue"
 
   # Application tuning
-  WORKER_POOL_SIZE: "10"
+  WORKER_POOL_SIZE: "100"
