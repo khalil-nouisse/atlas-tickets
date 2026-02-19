@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ingress-nginx-controller
+  namespace: ingress-nginx 
+data:
+  worker-connections: "10000"
+  max-worker-open-files: "10000"
+  keep-alive-requests: "1000"
+  upstream-keepalive-connections: "200"
