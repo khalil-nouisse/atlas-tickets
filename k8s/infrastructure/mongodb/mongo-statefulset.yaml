@@ -54,7 +54,7 @@ metadata:
   name: mongo-service
   namespace: atlastickets
 spec:
-  clusterIP: None
+  #clusterIP: None
   selector:
     app: mongo
   ports:

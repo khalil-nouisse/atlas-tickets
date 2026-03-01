@@ -87,7 +87,7 @@ metadata:
   name: postgres-service
   namespace: atlastickets
 spec:
-  clusterIP: None
+  #clusterIP: None
   selector:
     app: postgres
   ports:

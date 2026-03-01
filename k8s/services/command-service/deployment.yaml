@@ -8,7 +8,7 @@ metadata:
     app: atlastickets
     component: command-service
 spec:
-  replicas: 7  # Run 3 instances for high availability
+  replicas: 2  # Run 2 instances for high availability
   
   selector:
     matchLabels:
@@ -21,8 +21,8 @@ spec:
     spec:
       containers:
       - name: command-service
-        image: atlastickets/command-service:latest
-        imagePullPolicy: IfNotPresent  # Use local image (for kind)
+        image: khalilaitnouisse/command-service:latest
+        imagePullPolicy: IfNotPresent  # using Docker Hub
         
         ports:
         - containerPort: 3000  # Node.js Express port
@@ -58,11 +58,11 @@ spec:
         # Resource limits
         resources:
           requests:
-            memory: "512Mi"
-            cpu: "500m"
+            memory: "256Mi"
+            cpu: "256m"
           limits:
-            memory: "1Gi"
-            cpu: "1000m"
+            memory: "600Mi"
+            cpu: "512m"
         
         # Liveness probe - Kubernetes restarts pod if this fails
         livenessProbe:
