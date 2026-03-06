@@ -52,7 +52,7 @@ func StartConsumer(bookingService *service.BookingService) {
 	value := os.Getenv("WORKER_POOL_SIZE")
 	maxWorkers, err := strconv.Atoi(value)
 	if err != nil {
-		maxWorkers = 4 // default
+		maxWorkers = 50 // default
 	}
 
 	log.Println("Workers: ", maxWorkers)
