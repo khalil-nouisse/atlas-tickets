@@ -73,3 +73,4 @@ func main() {
 	log.Println("RabbitMQ Consumer Starting...")
 	events.StartConsumer(bookingService)
 }
+// trigger CI pipeline
