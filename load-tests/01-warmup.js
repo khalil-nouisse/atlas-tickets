@@ -16,7 +16,8 @@ export default function () {
         quantity: 1,
     });
 
-    const res = http.post('http://api.localhost/api/tickets', payload, {
+    //          local :  http://api.localhost/api/tickets
+    const res = http.post('http://api.84.8.216.45.nip.io/api/tickets', payload, {
         headers: { 'Content-Type': 'application/json' },
     });
 

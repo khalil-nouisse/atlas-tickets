@@ -32,7 +32,8 @@ export default function () {
     requestCount.add(1);
 
     const start = Date.now();
-    const res = http.post('http://api.localhost/api/tickets', payload, {
+    //             local :  http://api.localhost/api/tickets
+    const res = http.post('http://api.84.8.216.45.nip.io/api/tickets', payload, {
         headers: { 'Content-Type': 'application/json' },
     });
     requestDuration.add(Date.now() - start);
