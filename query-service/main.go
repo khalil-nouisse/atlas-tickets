@@ -62,7 +62,10 @@ func main() {
 			port = "8081"
 		}
 		addr := ":" + port
+
 		log.Println(" HTTP Server running on " + addr)
+		log.Println(" CI/CD Pipeline is ACTIVE!")
+
 		if err := r.Run(addr); err != nil {
 			log.Fatalf("HTTP Server Failed: %v", err)
 		}
@@ -73,4 +76,5 @@ func main() {
 	log.Println("RabbitMQ Consumer Starting...")
 	events.StartConsumer(bookingService)
 }
+
 // trigger CI pipeline

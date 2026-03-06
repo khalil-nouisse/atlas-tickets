@@ -7,6 +7,7 @@ on:
       - main
     paths:
       - 'query-service/**' 
+  workflow_dispatch:
 
 jobs:
   build-and-push:
@@ -42,3 +43,20 @@ jobs:
           tags: |
             khalilaitnouisse/query-service:latest
             khalilaitnouisse/query-service:${{ steps.vars.outputs.sha_short }}
+      
+      - name: Deploy to OCI Master Node
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.OCI_MASTER_IP }}
+          username: ${{ secrets.OCI_USERNAME }}
+          key: ${{ secrets.OCI_SSH_KEY }}
+          script: |
+            export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+            
+            echo "Updating query-service to image tag: ${{ steps.vars.outputs.sha_short }}"
+            
+            # Update the deployment with the new image
+            kubectl set image deployment/query-service query-service=khalilaitnouisse/query-service:${{ steps.vars.outputs.sha_short }} -n atlastickets
+            
+            # Wait for the rollout to finish successfully
+            kubectl rollout status deployment/query-service -n atlastickets
