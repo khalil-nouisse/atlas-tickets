@@ -1,4 +1,4 @@
-name: CI - Query Service
+name: CI/CD PIPELINE
 
 on:
   push:
