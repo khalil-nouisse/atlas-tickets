@@ -13,11 +13,15 @@ spec:
     metadata:
       labels:
         app: query-service
+      annotations:  # ← ADD THIS SECTION
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "4000"  
+        prometheus.io/path: "/metrics"
     spec:
       containers:
       - name: query-service
-        image: khalilaitnouisse/query-service:latest
-        imagePullPolicy: IfNotPresent  # using Docker Hub
+        image: khalilaitnouisse/query-service:v9
+        imagePullPolicy: Always  # using Docker Hub
         
         ports:
         - containerPort: 4000  # HTTP API for reads
@@ -84,6 +88,10 @@ spec:
   - port: 4000
     targetPort: 4000
     name: http
+  - port: 4000
+    targetPort: 4000
+    name: metrics
+  
   type: ClusterIP  # Internal only (accessed via Ingress)
 
   
