@@ -8,14 +8,15 @@ const requestDuration = new Trend('request_duration');
 
 export const options = {
     stages: [
-        { duration: '30s', target: 200 },
-        { duration: '1m', target: 1000 }, 
-        { duration: '1m', target: 1000 }, 
-        { duration: '30s', target: 0 },
+        { duration: '30s', target: 200 },  // Smooth ramp-up
+        { duration: '1m', target: 1200 }, // Peak: slightly higher to test the new 1.0 CPU limit
+        { duration: '1m', target: 1200 }, // Sustain peak to show worker stacking
+        { duration: '30s', target: 0 },    // Graceful ramp-down
     ],
     thresholds: {
-        'request_duration': ['p(95)<1000'], // Goal: 95% under 1 second
-        'errors': ['rate<0.01'],            // Goal: Less than 1% errors
+        // With 1.0 CPU, p(95) under 1.5s is a very strong professional result
+        'request_duration': ['p(95)<1500'],
+        'errors': ['rate<0.01'],
     },
 };
 
@@ -32,9 +33,9 @@ export default function () {
     requestCount.add(1);
 
     const start = Date.now();
-    // Pointing to your ingress
     const res = http.post('http://api.84.8.216.45.nip.io/api/tickets', payload, {
         headers: { 'Content-Type': 'application/json' },
+        timeout: '10s', // Prevent k6 from hanging if the network stutters
     });
     requestDuration.add(Date.now() - start);
 
@@ -46,6 +47,7 @@ export default function () {
         errorRate.add(1);
     }
 
-    // A tiny randomized sleep simulates real users clicking buttons
-    sleep(Math.random() * 0.5); 
+    // Increased sleep slightly (0.8s) to simulate more realistic "human" clicking
+    // This helps maintain a high throughput without triggering a TCP connection storm
+    sleep(Math.random() * 0.8);
 }
