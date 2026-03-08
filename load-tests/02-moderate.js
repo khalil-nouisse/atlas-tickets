@@ -8,14 +8,14 @@ const requestDuration = new Trend('request_duration');
 
 export const options = {
     stages: [
-        { duration: '30s', target: 1000 },
-        { duration: '1m', target: 5000 },
-        { duration: '2m', target: 10000 },
+        { duration: '30s', target: 200 },
+        { duration: '1m', target: 1000 }, 
+        { duration: '1m', target: 1000 }, 
         { duration: '30s', target: 0 },
     ],
     thresholds: {
-        'request_duration': ['p(95)<2000'],
-        'errors': ['rate<0.1'],
+        'request_duration': ['p(95)<1000'], // Goal: 95% under 1 second
+        'errors': ['rate<0.01'],            // Goal: Less than 1% errors
     },
 };
 
@@ -32,7 +32,7 @@ export default function () {
     requestCount.add(1);
 
     const start = Date.now();
-    //             local :  http://api.localhost/api/tickets
+    // Pointing to your ingress
     const res = http.post('http://api.84.8.216.45.nip.io/api/tickets', payload, {
         headers: { 'Content-Type': 'application/json' },
     });
@@ -46,5 +46,6 @@ export default function () {
         errorRate.add(1);
     }
 
-    sleep(Math.random() * 0.5);
+    // A tiny randomized sleep simulates real users clicking buttons
+    sleep(Math.random() * 0.5); 
 }

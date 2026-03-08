@@ -5,7 +5,7 @@ metadata:
   name: query-service
   namespace: atlastickets
 spec:
-  replicas: 2  # Run 5 instances
+  replicas: 3  # Run 3 instances
   selector:
     matchLabels:
       app: query-service

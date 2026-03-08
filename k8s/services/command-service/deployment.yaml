@@ -8,7 +8,7 @@ metadata:
     app: atlastickets
     component: command-service
 spec:
-  replicas: 2  # Run 2 instances for high availability
+  replicas: 3  # Run 3 instances for high availability
   
   selector:
     matchLabels:

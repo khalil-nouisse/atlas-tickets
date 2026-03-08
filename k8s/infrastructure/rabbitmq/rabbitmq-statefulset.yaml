@@ -16,36 +16,33 @@ spec:
     spec:
       containers:
       - name: rabbitmq
-        image: rabbitmq:3.12-management-alpine
+        # 1. Switched from alpine to the stable Debian image for ARM64 compatibility
+        image: rabbitmq:3.12-management
+        
         ports:
         - containerPort: 5672
           name: amqp
         - containerPort: 15672
           name: management
-        env:
-        - name: RABBITMQ_URL
-          valueFrom:
-            secretKeyRef:
-              name: atlastickets-secrets
-              key: RABBITMQ_URL
-        - name: RABBITMQ_QUEUE_TICKET
-          valueFrom:
-            configMapKeyRef:
-              name: atlastickets-config
-              key: RABBITMQ_QUEUE_TICKET
+        - containerPort: 15692
+          name: metrics
+          
         resources:
           requests:
             memory: "256Mi"
             cpu: "200m"
           limits:
-            memory: "512Mi"
-            cpu: "400m"
+            # 2. Bumped memory to 1Gi to give the Erlang VM room to boot
+            memory: "1Gi" 
+            cpu: "500m"
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: rabbitmq-service
   namespace: atlastickets
+  labels:                  
+    app: rabbitmq
 spec:
   selector:
     app: rabbitmq
@@ -56,3 +53,6 @@ spec:
   - port: 15672
     targetPort: 15672
     name: management
+  - port: 15692
+    targetPort: 15692
+    name: metrics
