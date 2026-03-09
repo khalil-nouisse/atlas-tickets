@@ -20,7 +20,6 @@ spec:
         app: postgres
     spec:
       nodeSelector:
-      #to run on the data node
         workload-type: data
       containers:
       - name: postgres
@@ -59,7 +58,7 @@ spec:
         resources:
           requests:
             memory: "512Mi"
-            cpu: "500m"
+            cpu: "200m"  
           limits:
             memory: "2Gi"
             cpu: "1000m"

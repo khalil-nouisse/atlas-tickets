@@ -19,6 +19,8 @@ spec:
       labels:
         component: command-service
     spec:
+      nodeSelector:
+        workload-type: app  # Keep command-service off the data node (worker-1)
       containers:
       - name: command-service
         image: khalilaitnouisse/command-service:latest
