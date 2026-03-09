@@ -10,15 +10,15 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: command-service
-  minReplicas: 7
-  maxReplicas: 15
+  minReplicas: 2 
+  maxReplicas: 3
   metrics:
   - type: Resource
     resource:
       name: cpu
       target:
         type: Utilization
-        averageUtilization: 40 # Scale up if CPU exceeds 40%
+        averageUtilization: 70 # Scale up if CPU exceeds 70%
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
@@ -30,12 +30,12 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: query-service
-  minReplicas: 5
-  maxReplicas: 10
+  minReplicas: 2  
+  maxReplicas: 3
   metrics:
   - type: Resource
     resource:
       name: cpu
       target:
         type: Utilization
-        averageUtilization: 50
+        averageUtilization: 70
