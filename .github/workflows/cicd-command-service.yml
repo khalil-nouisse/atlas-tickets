@@ -1,4 +1,4 @@
-name: CI/CD - Query Service
+name: CI/CD PIPELINE - Command Service
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - cicd
       - main
     paths:
-      - 'query-service/**' 
+      - 'command-service/**'
   workflow_dispatch:
 
 jobs:
@@ -31,19 +31,18 @@ jobs:
 
       - name: Get Git Commit SHA
         id: vars
-        # This grabs the short version of the commit hash to use as the image tag
         run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v5
         with:
-          context: ./query-service
-          platforms: linux/arm64 # Forces the ARM64 build for Oracle Cloud
+          context: ./command-service
+          platforms: linux/arm64  # Forces ARM64 build for Oracle Cloud
           push: true
           tags: |
-            khalilaitnouisse/query-service:latest
-            khalilaitnouisse/query-service:${{ steps.vars.outputs.sha_short }}
-      
+            khalilaitnouisse/command-service:latest
+            khalilaitnouisse/command-service:${{ steps.vars.outputs.sha_short }}
+
       - name: Deploy to OCI Master Node
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -52,11 +51,12 @@ jobs:
           key: ${{ secrets.OCI_SSH_KEY }}
           script: |
             export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-            
-            echo "Updating query-service to image tag: ${{ steps.vars.outputs.sha_short }}"
-            
-            # Update the deployment with the new image
-            kubectl set image deployment/query-service query-service=khalilaitnouisse/query-service:${{ steps.vars.outputs.sha_short }} -n atlastickets
-            
+
+            echo "Updating command-service to image tag: ${{ steps.vars.outputs.sha_short }}"
+
+            # Update the deployment with the new image and enforce replica count
+            kubectl set image deployment/command-service command-service=khalilaitnouisse/command-service:${{ steps.vars.outputs.sha_short }} -n atlastickets
+            kubectl scale deployment/command-service --replicas=3 -n atlastickets
+
             # Wait for the rollout to finish successfully
-            kubectl rollout status deployment/query-service -n atlastickets
+            kubectl rollout status deployment/command-service -n atlastickets
