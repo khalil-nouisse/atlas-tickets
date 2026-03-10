@@ -13,7 +13,7 @@ AtlasTickets simulates the real-world problem of a major event ticket sale — t
 
 ## Architecture Overview
 
-AtlasTickets is built on a strict **CQRS (Command Query Responsibility Segregation)** pattern backed by an event-driven **RabbitMQ** message bus.
+AtlasTickets is built on a strict **CQRS (Command Query Responsibility Segregation)** pattern backed by an event-driven **RabbitMQ** message bus. The write path and read path are fully decoupled and independently scalable.
 
 ![System Architecture](Assets/SystemArchLight.png)
 
@@ -29,9 +29,66 @@ By handling inventory decrements entirely in memory via Lua (Layer 1), buffering
 
 ---
 
-## 🚀 Quick Start (Local Docker)
+## Technical Stack
 
-The fastest way to test the system locally without a full Kubernetes cluster is using Docker Compose.
+| Component | Technology | Version |
+|---|---|---|
+| Command Service | Node.js (Express) | 20.x |
+| Query Service | Go (Gin, prometheus/client_golang) | 1.22+ |
+| Message Broker | RabbitMQ | 3.x |
+| Primary Database | PostgreSQL | 15 |
+| Read Model | MongoDB | 7.x |
+| Cache / Inventory | Redis | 7.x |
+| Container Orchestration | Kubernetes (K3s & Kind) | v1.34.4 |
+
+---
+
+## Key Design Decisions
+
+- **Why CQRS for Ticketing?** Reads are extremely frequent (checking availability) while writes are bursty and critical (booking). By splitting the system, we can serve reads instantly from MongoDB/Redis without burdening the PostgreSQL database handling the bookings.
+- **Why Redis over DB Locks?** Database locks serialize traffic, bringing systems to a halt under load. Redis processes the atomic decrement in RAM. During our peak load test, Redis instantly rejected 34,749 excess requests, saving the primary database from 34,749 unnecessary transactions.
+- **Why RabbitMQ instead of HTTP calls?** Synchronous HTTP calls between the command API and the processing backend create backpressure. RabbitMQ absorbs sudden traffic spikes, allowing the Go worker pool to process valid bookings at a controlled rate.
+
+---
+
+## Performance Under Peak Load
+
+The system's resilience was tested against a simulated rush of **48,077 concurrent requests** (via k6) attempting to buy **13,328 available tickets**.
+
+| Metric | Result |
+|---|---|
+| Load Test Scenarios | 50,000 VUs Peak |
+| Tickets Sold | 13,328 (100% Sell-Through) |
+| Requests Rejected (Redis) | 34,749 (Instantly dropped) |
+| Oversold Tickets | **0** |
+| Race Conditions | **0** |
+| Error Rate | 0.00% |
+
+All tests demonstrated perfect data consistency between the PostgreSQL source of truth and the MongoDB read model.
+
+![Database Verification](Assets/DatabaseVerification.png)
+
+---
+
+## Project Structure & Deep-Dive Documentation
+
+The full documentation for this complex system is divided into focused guides. 
+
+**Core Repository Documents:**
+
+1. [API Reference](API-REFERENCE.md) - Full endpoint documentation and cURL examples
+2. [Architecture & Design Decisions](DESIGN_DECISIONS.md) - Deep dive into design patterns
+3. [Load Testing & Results](LOAD_TESTING.md) - How to run k6 and analyze peak metrics
+4. [CI/CD Pipeline](CICD_PIPELINE.md) - Automated workflow and GitHub Actions secrets
+5. [Kubernetes Deployment Manual](KUBERNETES_MANUAL.md) - Kind (local) and K3s (cloud) clusters
+6. [Monitoring & Observability](GRAFANA_MANUAL.md) - Prometheus and Grafana dashboards
+7. [Troubleshooting](TROUBLESHOOTING.md) - Common issues and database reset commands
+
+---
+
+## Quick Start (Local Development)
+
+The fastest way to test the API locally is using Docker Compose.
 
 ```bash
 # 1. Clone the repository
@@ -41,38 +98,31 @@ cd atlas-tickets
 # 2. Start all services and databases
 docker-compose up -d --build
 
-# 3. Services are now available
-# Command API: http://localhost:3000
-# Query API: http://localhost:4000
-# RabbitMQ UI: http://localhost:15672 (guest/guest)
+# 3. Check availability
+curl "http://localhost:4000/tickets/available?match_id=3&category=VIP"
+
+# 4. Purchase a ticket
+curl -X POST http://localhost:3000/api/tickets \
+  -H "Content-Type: application/json" \
+  -d '{
+    "match_id": 3,
+    "category": "VIP",
+    "user_id": 1000,
+    "quantity": 1
+  }'
 ```
 
 ---
 
-## 📚 Project Documentation
+## Deployment Highlights
 
-To keep this README clean, the full documentation is split into specialized guides. Please refer to these documents for deep-dives into the architecture, deployment, and testing details:
+**CI/CD Automation:**
+Both services utilize fully automated CI/CD pipelines via GitHub Actions. Pushes to `main` trigger multi-architecture Docker Engine builds (supporting `linux/amd64` and `linux/arm64` for Oracle Cloud). Tagged images are pushed to Docker Hub, and the cloud master node is updated seamlessly via rolling deployments.
 
-| Document | Description |
-|---|---|
-| 📐 [**Architecture & Design Decisions**](DESIGN_DECISIONS.md) | WhyCQRS, Redis over DB locks, and Go concurrency. |
-| 📊 [**Load Testing & Performance**](LOAD_TESTING.md) | How the system achieved 48,000+ requests with 0 rejections latency. |
-| ⚓ [**Kubernetes Deployment Manual**](KUBERNETES_MANUAL.md) | Step-by-step instructions for Kind (local) and K3s (cloud) clusters. |
-| 🔄 [**CI/CD Pipeline**](CICD_PIPELINE.md) | Automated multi-arch builder and deployment workflow. |
-| 📡 [**API Reference**](API-REFERENCE.md) | Endpoints, cURL examples, and response schemas. |
-| 📈 [**Grafana Manual**](GRAFANA_MANUAL.md) | Prometheus metrics and dashboard configuration. |
-| 🛠️ [**Troubleshooting Guide**](TROUBLESHOOTING.md) | Solutions for common deployment or testing issues. |
+**Observability:**
+We use `kube-prometheus-stack` to scrape `/metrics`. Custom dashboards track `atlastickets_bookings_confirmed_total`, sold-out events, and active worker pool sizes in real-time.
 
----
-
-## Technical Stack Summary
-
-- **Backend Logic:** Node.js (Command), Go (Query Service)
-- **Message Broker:** RabbitMQ
-- **Databases:** PostgreSQL 15, MongoDB 7.x, Redis 7.x
-- **Infrastructure:** Kubernetes (K3s & Kind), Docker, Traefik
-- **Observability:** Prometheus, Grafana
-- **Testing & CI/CD:** k6, GitHub Actions
+![Grafana Dashboard](Assets/GrafanaDashboard.png)
 
 ---
 
