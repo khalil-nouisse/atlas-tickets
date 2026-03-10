@@ -39,7 +39,15 @@ By handling inventory decrements entirely in memory via Lua (Layer 1), buffering
 | Primary Database | PostgreSQL | 15 |
 | Read Model | MongoDB | 7.x |
 | Cache / Inventory | Redis | 7.x |
-| Container Orchestration | Kubernetes (K3s & Kind) | v1.34.4 |
+| Container Orchestration | Kubernetes (K3s) | v1.34.4 |
+| Local Dev Cluster | Kind (Kubernetes in Docker) | Latest |
+| Ingress (Cloud) | Traefik | Built-in K3s |
+| Ingress (Local) | NGINX Ingress Controller | Latest |
+| Monitoring | Prometheus + Grafana | kube-prometheus-stack |
+| CI/CD | GitHub Actions | — |
+| Load Testing | k6 | Latest |
+| Cloud Provider | Oracle Cloud Free Tier | ARM64 (VM.Standard.A1.Flex) |
+
 
 ---
 
@@ -118,6 +126,8 @@ curl -X POST http://localhost:3000/api/tickets \
 
 **CI/CD Automation:**
 Both services utilize fully automated CI/CD pipelines via GitHub Actions. Pushes to `main` trigger multi-architecture Docker Engine builds (supporting `linux/amd64` and `linux/arm64` for Oracle Cloud). Tagged images are pushed to Docker Hub, and the cloud master node is updated seamlessly via rolling deployments.
+
+![CI/CD Pipeline](Assets/cicdDiagram.png)
 
 **Observability:**
 We use `kube-prometheus-stack` to scrape `/metrics`. Custom dashboards track `atlastickets_bookings_confirmed_total`, sold-out events, and active worker pool sizes in real-time.
